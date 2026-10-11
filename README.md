@@ -1,6 +1,6 @@
 <div align="center">
 
-# 💰 AhorRaso
+# AhorRaso
 
 **Gestión financiera personal para jóvenes y universitarios**
 *Registra, controla y ahorra sin excusas — con voz, alertas y recomendaciones inteligentes.*
@@ -16,7 +16,7 @@
 
 ---
 
-## 📖 Índice
+## Índice
 
 1. [Descripción del proyecto](#-descripci%C3%B3n-del-proyecto)
 2. [Características](#-caracter%C3%ADsticas)
@@ -37,7 +37,7 @@
 
 ---
 
-## 🎯 Descripción del proyecto
+## Descripción del proyecto
 
 **AhorRaso** resuelve la ineficiencia, la falta de control presupuestal y los errores de cálculo de la gestión manual de dinero. La app permite a jóvenes y universitarios:
 
@@ -54,7 +54,7 @@
 
 ---
 
-## ✨ Características
+## Características
 
 | ID | Funcionalidad | Prioridad MoSCoW | Estado |
 | :-- | :--- | :--: | :--: |
@@ -81,7 +81,7 @@
 
 ---
 
-## 🧰 Stack Tecnológico
+## Stack Tecnológico
 
 ### Aplicación móvil
 | Área | Tecnología |
@@ -119,13 +119,13 @@
 
 ---
 
-## 🏗️ Arquitectura
+## Arquitectura
 
 **Patrón:** *Feature-First + Clean Architecture ligera* con estrategia **offline-first**.
 
 ```mermaid
 flowchart LR
-    subgraph M["📱 App (React Native + Expo)"]
+    subgraph M["App (React Native + Expo)"]
         UI["UI · Expo Router"]
         DB[("SQLite local<br/>+ outbox")]
         VOZ["🎙️ STT on-device"]
@@ -133,13 +133,13 @@ flowchart LR
         VOZ --> DB
     end
 
-    subgraph S["☁️ Supabase (Free)"]
+    subgraph S["Supabase (Free)"]
         AUTH["Auth + RLS"]
         PG[("PostgreSQL")]
         FN["Edge Functions<br/>sync · ai-gateway · alertas"]
     end
 
-    subgraph E["🌐 Externas ($0)"]
+    subgraph E["Externas ($0)"]
         IA["Groq / Gemini / OpenRouter"]
         PUSH["Expo Push"]
     end
@@ -159,11 +159,11 @@ flowchart LR
 4. Se descambian los cambios remotos con un pull incremental (`updated_at > last_sync`) y la UI se actualiza sola mediante *live queries*.
 
 Diagramas completos (secuencia de sync, pipeline de voz, gateway de IA):
-➡️ [`docs/ARQUITECTURA_TECNICA.md`](docs/ARQUITECTURA_TECNICA.md)
+[`docs/ARQUITECTURA_TECNICA.md`](docs/ARQUITECTURA_TECNICA.md)
 
 ---
 
-## 📁 Estructura del repositorio
+## Estructura del repositorio
 
 ```
 AhorRaso/
@@ -188,7 +188,7 @@ AhorRaso/
 
 ---
 
-## ⚙️ Requisitos previos
+## Requisitos previos
 
 | Herramienta | Versión | Nota |
 | :--- | :--- | :--- |
@@ -203,7 +203,7 @@ AhorRaso/
 
 ---
 
-## 🚀 Puesta en marcha
+## Puesta en marcha
 
 > Los pasos aplican una vez ejecutado el *scaffolding* de la app (**Sprint 0**).
 > El esquema de comandos sigue el estándar de Expo + Supabase CLI.
@@ -220,7 +220,7 @@ npm install
 cp .env.example .env
 #   EXPO_PUBLIC_SUPABASE_URL=...
 #   EXPO_PUBLIC_SUPABASE_ANON_KEY=...
-#   ⚠️ Las claves de IA (GROQ_API_KEY, GEMINI_API_KEY) van SOLO en
+#   Las claves de IA (GROQ_API_KEY, GEMINI_API_KEY) van SOLO en
 #      Supabase Secrets, nunca en .env de la app.
 
 # 4.Levantar Supabase local (opcional pero recomendado en dev)
@@ -239,7 +239,7 @@ npx expo run:ios            # development build iOS (requiere macOS)
 
 ---
 
-## 🗄️ Base de datos y migraciones
+## Base de datos y migraciones
 
 ```bash
 supabase migration new add_transactions   # crea archivo SQL
@@ -263,7 +263,7 @@ supabase db push                           # aplicar en remoto (producción)
 
 ---
 
-## 📜 Scripts disponibles
+## Scripts disponibles
 
 | Comando | Descripción |
 | :--- | :--- |
@@ -277,13 +277,13 @@ supabase db push                           # aplicar en remoto (producción)
 | `npm run db:migrate` | Aplica migraciones de Supabase en local |
 | `npm run build:preview` | `eas build -p android --profile preview` (APK interno) |
 
-> ℹ️ Estos scripts se habilitan con el *scaffolding* del monorepo (**Sprint 0**).
+> ℹEstos scripts se habilitan con el *scaffolding* del monorepo (**Sprint 0**).
 > Mientras tanto el repositorio contiene la fase de planificación: catálogo de
 > requisitos, plantillas de issues y arquitectura. Ver [Estado del proyecto](#-estado-del-proyecto).
 
 ---
 
-## 🧪 Pruebas
+## Pruebas
 
 | Nivel | Herramienta | Objetivo |
 | :--- | :--- | :--- |
@@ -300,7 +300,7 @@ npm run test:e2e          # Maestro (emulador corriendo)
 
 ---
 
-## 🎙️ Integraciones: voz e IA
+## Integraciones: voz e IA
 
 ### Voz (RF-003) — $0
 1. `expo-speech-recognition` transcribe con los servicios **on-device** del sistema (SFSpeechRecognizer / Android SpeechRecognizer).
@@ -314,45 +314,7 @@ npm run test:e2e          # Maestro (emulador corriendo)
 
 ---
 
-## 🚢 CI/CD y despliegue
-
-| Etapa | Herramienta | Trigger |
-| :--- | :--- | :--- |
-| Lint + typecheck + tests | GitHub Actions | Cada PR y push a `main` |
-| Keep-alive de Supabase + backup `pg_dump` | GitHub Actions (`schedule`) | Cada 5 días / diario |
-| Build de la app | **EAS Build** (`preview` / `production`) | Tag `v*` o manual |
-| Publicación en tiendas | **EAS Submit** | Release en GitHub |
-| Parche caliente (solo JS) | **EAS Update (OTA)** | Hotfix en `main` |
-
-**Presupuesto CI/CD:** $0 (repo público ⇒ GitHub Actions ilimitado; EAS Free ⇒ 30 builds/mes y OTA para 1.000 MAU).
-
----
-
-## 📌 Estado del proyecto
-
-| Fase | Contenido | Estado |
-| :--- | :--- | :---: |
-| 1 | Catálogo de requisitos (MoSCoW) e historias de usuario | ✅ |
-| 2 | Arquitectura técnica y estrategia de despliegue | ✅ |
-| 3 | Scaffolding del monorepo + CI base | ⏳ Sprint 0 |
-| 4 | MVP funcional (RF *Must Have*) | ⏳ Sprint 1–5 |
-| 5 | IA, voz y pulido (RF *Should/Could Have*) | ⏳ Sprint 5–7 |
-
-Leyenda: ✅ completado · ⏳ pendiente en curso.
-
----
-
-## 👥 Equipo
-
-| Rol | Responsabilidad | Áreas |
-| :--- | :--- | :--- |
-| **Dev A** — Mobile/UX | Frontend y experiencia de usuario | Dashboard, historial, formularios, gráficas |
-| **Dev B** — Data/Backend | Datos, sync y confiabilidad | Schema + RLS, motor de sync, alertas |
-| **Dev C** — IA/Voz/Calidad | Funcionalidades inteligentes y calidad | Voz, AI Gateway, CI/CD, pruebas |
-
----
-
-## 📚 Documentación
+## Documentación
 
 | Documento | Contenido |
 | :--- | :--- |
@@ -363,19 +325,10 @@ Leyenda: ✅ completado · ⏳ pendiente en curso.
 
 ---
 
-## 💲 Costo total del proyecto
+## Costo total del proyecto
 
 | Concepto | Costo |
 | :--- | :--- |
 | Desarrollo, builds, backend, IA, CI/CD, monitoreo | **$0 USD** |
 | Publicación en Google Play (opcional) | USD 25 — pago único |
 | Publicación en App Store (opcional) | USD 99/año |
-
----
-
-## 📄 Licencia
-
-Este proyecto se distribuye bajo la licencia **MIT** — ver [`LICENSE`](LICENSE).
-
-> AhorRaso no es un servicio financiero: no mueve dinero ni se conecta a bancos.
-> Los datos registrados pertenecen exclusivamente al usuario (aislamiento garantizado por RLS).
