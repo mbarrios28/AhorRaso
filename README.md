@@ -3,14 +3,19 @@
 # AhorRaso
 
 **Gestión financiera personal para jóvenes y universitarios**
-*Registra, controla y ahorra sin excusas — con voz, alertas y recomendaciones inteligentes.*
+*Registra, controla y ahorra sin excusas — offline-first, comandos por voz, alertas de presupuesto y recomendaciones inteligentes.*
 
-[![Estado](https://img.shields.io/badge/estado-en_desarrollo-yellow)](#-estado-del-proyecto)
-[![Presupuesto](https://img.shields.io/badge/presupuesto-%240%20USD-brightgreen)](#-stack-tecnol%C3%B3gico)
-[![License](https://img.shields.io/badge/licencia-MIT-blue.svg)](LICENSE)
-[![Expo](https://img.shields.io/badge/Expo-SDK_57-000020?logo=expo)](https://expo.dev)
-[![Supabase](https://img.shields.io/badge/Supabase-Postgres_%2B_RLS-3FCF8E?logo=supabase)](https://supabase.com)
-[![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org)
+<br/>
+
+<!-- Technology Badges -->
+[![React Native](https://img.shields.io/badge/React_Native-0.76-61DAFB?style=for-the-badge&logo=react&logoColor=black)](https://reactnative.dev)
+[![Expo](https://img.shields.io/badge/Expo-SDK_57-000020?style=for-the-badge&logo=expo&logoColor=white)](https://expo.dev)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178C6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org)
+[![SQLite](https://img.shields.io/badge/SQLite-Native_JSI-003B57?style=for-the-badge&logo=sqlite&logoColor=white)](https://orm.drizzle.team)
+[![Drizzle ORM](https://img.shields.io/badge/Drizzle_ORM-0.38-C5F74F?style=for-the-badge&logo=drizzle&logoColor=black)](https://orm.drizzle.team)
+[![Supabase](https://img.shields.io/badge/Supabase-PostgreSQL_%2B_RLS-3FCF8E?style=for-the-badge&logo=supabase&logoColor=white)](https://supabase.com)
+[![Google Stitch](https://img.shields.io/badge/Google_Stitch-Design_System-4285F4?style=for-the-badge&logo=google&logoColor=white)](https://stitch.withgoogle.com/projects/17338312379497379811)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=for-the-badge)](LICENSE)
 
 </div>
 
@@ -18,317 +23,251 @@
 
 ## Índice
 
-1. [Descripción del proyecto](#-descripci%C3%B3n-del-proyecto)
-2. [Características](#-caracter%C3%ADsticas)
-3. [Stack tecnológico](#-stack-tecnol%C3%B3gico)
-4. [Arquitectura](#-arquitectura)
-5. [Estructura del repositorio](#-estructura-del-repositorio)
-6. [Requisitos previos](#-requisitos-previos)
-7. [Puesta en marcha](#-puesta-en-marcha)
-8. [Base de datos y migraciones](#-base-de-datos-y-migraciones)
-9. [Scripts disponibles](#-scripts-disponibles)
-10. [Pruebas](#-pruebas)
-11. [Integraciones: voz e IA](#-integraciones-voz-e-ia)
-12. [CI/CD y despliegue](#-cicd-y-despliegue)
-13. [Estado del proyecto](#-estado-del-proyecto)
-14. [Equipo](#-equipo)
-15. [Documentación](#-documentaci%C3%B3n)
-16. [Licencia](#-licencia)
+1. [Descripción del Proyecto](#-descripción-del-proyecto)
+2. [Características Principales](#-características-principales)
+3. [Diseño y Prototipos en Google Stitch](#-diseño-y-prototipos-en-google-stitch)
+4. [Arquitectura Técnica](#-arquitectura-técnica)
+5. [Estructura del Proyecto](#-estructura-del-proyecto)
+6. [Instalación y Puesta en Marcha](#-instalación-y-puesta-en-marcha)
+7. [Configuración de Stitch MCP (Opcional)](#-configuración-de-stitch-mcp-opcional)
+8. [Equipo de Desarrollo](#-equipo-de-desarrollo)
+9. [Documentación del Repositorio](#-documentación-del-repositorio)
+10. [Licencia](#-licencia)
 
 ---
 
-## Descripción del proyecto
+## Descripción del Proyecto
 
-**AhorRaso** resuelve la ineficiencia, la falta de control presupuestal y los errores de cálculo de la gestión manual de dinero. La app permite a jóvenes y universitarios:
+**AhorRaso** es una aplicación móvil diseñada específicamente para jóvenes y estudiantes universitarios que buscan tomar control de sus finanzas personales, reducir sus gastos hormiga y alcanzar metas de ahorro reales sin fricción.
 
-- Registrar ingresos y gastos en segundos — **manual o por comando de voz**.
-- Visualizar el estado financiero en un dashboard que carga en **menos de 3 segundos**.
-- Recibir **alertas proactivas de sobregiro** antes de que ocurra.
-- Definir **presupuestos por categoría** y **metas de ahorro** con proyección.
-- Obtener **recomendaciones inteligentes de ahorro** generadas por IA.
-
-> **Restricción de diseño #1:** todo el proyecto funciona con **$0 USD** de presupuesto.
-> Cada herramienta del stack es *Open Source* o cuenta con un *Free Tier* suficiente
-> para desarrollar, probar y lanzar el MVP completo. Ver detalle en
-> [`docs/ARQUITECTURA_TECNICA.md`](docs/ARQUITECTURA_TECNICA.md).
+La plataforma resuelve los problemas más comunes de la gestión financiera manual:
+- **Latencia cero:** El registro de movimientos y la carga del dashboard se ejecutan en milisegundos directamente sobre una base de datos local embebida.
+- **Funcionamiento 100% Offline-First:** Se puede operar sin conexión a internet en combis, campus universitarios o zonas de baja cobertura, encolando los cambios de forma idempotente.
+- **Registro multimodal:** Soporta registro manual ultrarrápido con montos hero, chips de incremento (`+5`, `+10`, `+20`) y registro hands-free por comandos de voz on-device.
+- **Restricción de presupuesto $0 USD:** Todo el stack tecnológico utiliza herramientas *Open Source* y planes *Free Tier* verificados (Supabase, Groq, Gemini API, EAS, PostHog).
 
 ---
 
-## Características
+## Características Principales
 
-| ID | Funcionalidad | Prioridad MoSCoW | Estado |
-| :-- | :--- | :--: | :--: |
-| RF-001 | Registrar ingresos | Must Have | ⏳ |
-| RF-002 | Registrar gastos (monto, fecha, categoría, método de pago) | Must Have | ⏳ |
-| RF-003 | **Registrar gastos por voz** | Must Have | ⏳ |
-| RF-004 | Categorizar movimientos | Must Have | ⏳ |
-| RF-005 | Gestionar categorías personalizadas | Must Have | ⏳ |
-| RF-006 | Presupuesto por categoría y periodo | Must Have | ⏳ |
-| RF-007 | Metas de ahorro con fecha estimada | Should Have | ⏳ |
-| RF-008 | Dashboard financiero (saldo, gastos, proyección) | Must Have | ⏳ |
-| RF-009 | Historial con filtros (fecha, categoría, monto) | Must Have | ⏳ |
-| RF-010/011 | Umbrales configurables y **alertas de presupuesto** | Must Have | ⏳ |
-| RF-012 | Análisis de patrones de consumo | Could Have | ⏳ |
-| RF-013 | **Recomendaciones de ahorro con IA** | Could Have | ⏳ |
-| RF-014 | Simulación de proyección de metas | Could Have | ⏳ |
-| RF-018 | Acceso con contraseña, **PIN o biometría** | Could Have | ⏳ |
+### 💳 Registro Rápido de Gastos e Ingresos
+- Formulario hero optimizado para registrar un movimiento en menos de 5 segundos.
+- Montos calculados exactamente en centavos de sol (`S/`) para evitar errores de precisión de punto flotante.
+- Selección ágil entre métodos de pago locales (**Efectivo** y billeteras digitales como **Yape / Plin**).
+- Impacto de saldo en tiempo real: cálculo preventivo que muestra el saldo restante antes de confirmar la transacción.
 
-**Requisitos no funcionales clave garantizados por la arquitectura:**
+### 🎙️ Registro de Gastos por Voz (Speech-to-Text On-Device)
+- Reconocimiento de voz local mediante APIs del sistema operativo sin enviar grabaciones a servidores externos ($0 costo, máxima privacidad).
+- Extracción heurística y por expresiones regulares de monto, categoría y fecha.
+- Fallback automático hacia el gateway de IA solo en casos de baja confianza.
 
-- **RNF-003** · Dashboard < 3 s → se sirve desde **SQLite local** (offline-first).
-- **RNF-002 / RNF-005** · Seguridad y privacidad → **RLS por usuario**, claves solo en Edge Functions, PIN+biometría.
-- **RNF-009 / RNF-012** · Integridad y recuperación → **outbox idempotente** + pull incremental + `pg_dump` diario.
+### 🏷️ Categorización Inteligente y Creación In-Flow
+- Categorías organizadas con colores dinámicos e iconos de Lucide.
+- Creación de categorías personalizadas directamente dentro del flujo de gasto sin abandonar la pantalla.
+- Sugerencia automática de iconos contextualizada al entorno universitario peruano (*combi*, *menú*, *fotocopias*, *chelas*, etc.).
 
----
+### 📊 Presupuestos Dinámicos y Alertas de Sobregiro
+- Configuración de topes mensuales y semanales por categoría.
+- Alertas proactivas automáticas al alcanzar el 80% y 100% del presupuesto asignado.
+- Comparativa visual de gastos ejecutados versus disponible.
 
-## Stack Tecnológico
+### 🎯 Metas de Ahorro con Proyección
+- Definición de objetivos con montos meta y fechas estimadas.
+- Cálculo de ahorro periódico sugerido y simulación de escenarios de cumplimiento.
 
-### Aplicación móvil
-| Área | Tecnología |
-| :--- | :--- |
-| Framework | **React Native + Expo SDK 57** (MIT) |
-| Lenguaje | **TypeScript** (`strict`) |
-| Navegación | **Expo Router** (file-based routing) |
-| Estado | **Zustand** (UI) · **Drizzle live queries** (datos) · **TanStack Query** (red) |
-| Base de datos local | **expo-sqlite + Drizzle ORM** (offline-first) |
-| UI | React Native Paper / NativeWind · **FlashList** para listas |
-| Voz | **`expo-speech-recognition`** (on-device, $0) |
-| Seguridad local | `expo-local-authentication` (PIN/biometría) + `expo-secure-store` |
-| Notificaciones | `expo-notifications` + Expo Push (gratis) |
+### 🤖 Asesor Financiero con IA ($0 Gateway)
+- Motor centralizado en Edge Functions con Groq Cloud (`Llama-3.3-70b` / `Qwen`) como proveedor primario y Google Gemini como fallback.
+- Detección de patrones de consumo y generación de recomendaciones contextuales de ahorro.
 
-### Backend y servicios
-| Área | Tecnología | Free Tier |
-| :--- | :--- | :--- |
-| BaaS | **Supabase** (Postgres + Auth + Realtime + Edge Functions) | 500 MB DB · 50.000 MAU · 5 GB egress · 500k Edge Fn/mes |
-| Auth | Supabase Auth (email/contraseña, magic link, OTP) | 50.000 MAU |
-| IA (Groq) | `gpt-oss` / `qwen` vía **Groq Cloud** (primario) | ~30 req/min, 1.000+ req/día |
-| IA (fallback) | **Gemini API Free Tier** → **OpenRouter `:free`** | 15/10/5 RPM según modelo |
-| CI/CD | **GitHub Actions** + **EAS Build/Update** | 2.000 min (∞ en repo público) + 30 builds/mes |
-| Observabilidad | **PostHog** (analytics + errores + session replay) | 1M eventos/mes · 100k excepciones/mes |
-| Monitoreo | UptimeRobot | 50 monitores |
-
-<details>
-<summary><b>💡 ¿Por qué este stack y no otro?</b></summary>
-
-- **Supabase > Firebase** para este caso: el modelo relacional con *Row Level Security* en SQL encaja perfecto con consultas agregadas de presupuestos y garantiza el aislamiento de datos (RNF-005).
-- **Expo > Flutter** para este equipo: un solo lenguaje (TS) con el backend, builds iOS en la nube sin Mac ni licencia de desarrollador, y actualizaciones OTA sin pasar por la tienda.
-- **SQLite local > consultar la API en cada pantalla**: es lo que hace cumplir el *< 3 s* del dashboard y el modo sin conexión.
-- **IA vía Edge Function**: las API keys nunca viajan en el bundle de la app, y se aíslan los *rate limits* detrás de un gateway con cache, cuotas por usuario y fallback determinista.
-
-</details>
+### 🔒 Seguridad Local y Privacidad
+- Aislamiento estricto de datos con *Row Level Security* (RLS) en base de datos.
+- Bloqueo y autenticación local mediante PIN numérico y biometría (Face ID / Huella digital).
 
 ---
 
-## Arquitectura
+## Diseño y Prototipos en Google Stitch
 
-**Patrón:** *Feature-First + Clean Architecture ligera* con estrategia **offline-first**.
+El sistema de diseño, pantallas y flujos de usuario se basan en los mocks oficiales del proyecto en **Google Stitch**:
+
+> 🔗 **Enlace al proyecto Stitch:** [stitch.withgoogle.com/projects/17338312379497379811](https://stitch.withgoogle.com/projects/17338312379497379811)  
+> **Project ID:** `17338312379497379811`
+
+### Sistema de Tokens (Dark Mode)
+* **Primary (Acciones principales / confirmación):** `#0EA371`
+* **Secondary (Ahorro / saldo disponible):** `#10B981`
+* **Tertiary / Alertas (Gastos y advertencias):** `#DF6C6B`
+* **Background:** `#0D0D0F`
+* **Surface 1 (Cards base):** `#18181B`
+* **Surface 2 (Inputs y elevación):** `#1F1F23`
+* **Líneas y bordes:** `#2A2A2F`
+* **Tipografías:**
+  - **Manrope:** Encabezados y cifras hero de alto impacto.
+  - **Hanken Grotesk:** Textos de lectura, botones y formularios.
+  - **JetBrains Mono:** Cifras monetarias, prefijos (`S/`) y fechas.
+
+---
+
+## Arquitectura Técnica
+
+El proyecto sigue una arquitectura **Clean Architecture ligera + Feature-First** bajo el paradigma **Local-First con sincronización diferida** (especificado en [`docs/ARQUITECTURA_TECNICA.md`](docs/ARQUITECTURA_TECNICA.md)):
 
 ```mermaid
-flowchart LR
-    subgraph M["App (React Native + Expo)"]
-        UI["UI · Expo Router"]
-        DB[("SQLite local<br/>+ outbox")]
-        VOZ["🎙️ STT on-device"]
-        UI --> DB
-        VOZ --> DB
+flowchart TD
+    subgraph Client["Cliente Móvil (React Native + Expo SDK 57)"]
+        UI["UI · Expo Router (Tabs & Modals)"]
+        Domain["Reglas de Dominio & Validación (Zod)"]
+        SQLite[("SQLite Local (expo-sqlite + Drizzle)")]
+        Outbox[("Cola Outbox Idempotente (UUIDv4)")]
+        STT["Reconocimiento de Voz On-Device"]
+
+        UI --> Domain
+        Domain --> SQLite
+        Domain --> Outbox
+        STT --> Domain
     end
 
-    subgraph S["Supabase (Free)"]
-        AUTH["Auth + RLS"]
-        PG[("PostgreSQL")]
-        FN["Edge Functions<br/>sync · ai-gateway · alertas"]
+    subgraph Backend["Supabase BaaS ($0 Free Tier)"]
+        EdgeSync["Edge Function: sync-engine"]
+        EdgeAI["Edge Function: ai-gateway"]
+        EdgeAlerts["Edge Function: budget-alerts"]
+        Postgres[("PostgreSQL + RLS")]
+
+        EdgeSync <--> Postgres
+        EdgeAlerts --> Postgres
     end
 
-    subgraph E["Externas ($0)"]
-        IA["Groq / Gemini / OpenRouter"]
-        PUSH["Expo Push"]
+    subgraph External["Servicios Externos ($0)"]
+        LLM["Groq Cloud / Google Gemini"]
+        Push["Expo Push Notifications"]
     end
 
-    DB <-->|sync al reconectar| FN
-    FN <--> PG
-    AUTH --> PG
-    FN --> IA
-    FN --> PUSH --> UI
+    Outbox -.->|"Push por lotes al reconectar"| EdgeSync
+    EdgeSync -.->|"Pull incremental (updated_at)"| SQLite
+    Domain -.->|"Fallback de análisis / IA"| EdgeAI
+    EdgeAI -.-> LLM
+    EdgeAlerts -.->|"Disparo de alertas"| Push
+    Push -.-> UI
 ```
 
-**Flujo de escritura (garantía offline):**
-
-1. El usuario registra un gasto → se escribe en **SQLite** + en la tabla **`outbox`** (< 50 ms).
-2. El dashboard lo muestra **de inmediato**, haya o no internet.
-3. Al reconectarse, el **motor de sync** drena el outbox en lotes idempotentes (UUID del cliente) hacia Supabase.
-4. Se descambian los cambios remotos con un pull incremental (`updated_at > last_sync`) y la UI se actualiza sola mediante *live queries*.
-
-Diagramas completos (secuencia de sync, pipeline de voz, gateway de IA):
-[`docs/ARQUITECTURA_TECNICA.md`](docs/ARQUITECTURA_TECNICA.md)
+### Patrón Outbox & Resiliencia
+1. **Escritura síncrona inmediata:** Cada gasto, categoría o movimiento se inserta en SQLite y en la tabla `outbox` en menos de 50 ms.
+2. **Idempotencia:** Toda entidad utiliza claves primarias UUIDv4 generadas por el cliente, garantizando que reintentos de red no produzcan registros duplicados.
+3. **Sincronización bidireccional:** El motor procesa la cola de salida en lotes hacia Supabase y descarga los cambios remotos (`updated_at > last_sync`) mediante paginación por cursores.
 
 ---
 
-## Estructura del repositorio
+## Estructura del Proyecto
 
 ```
 AhorRaso/
-├── .github/
-│   ├── ISSUE_TEMPLATE/        # Plantillas de HU y requisitos funcionales
-│   └── workflows/             # ci.yml · keep-alive.yml · backup.yml
+├── .agents/skills/            # Skills y guías de desarrollo Expo/EAS
 ├── apps/
-│   └── mobile/                # App Expo
-│       ├── src/app/           #   Rutas (Expo Router)
-│       ├── src/features/      #   transactions · budgets · goals · dashboard · alerts
-│       ├── src/core/          #   db · sync · auth · ai · voice · ui
-│       └── src/shared/        #   utilidades puras
-├── supabase/
-│   ├── migrations/            # SQL versionado (esquema + RLS)
-│   └── functions/             # sync-engine · ai-gateway · budget-alerts · export
+│   └── mobile/                # Código fuente de la aplicación móvil Expo
+│       ├── assets/            # Iconos de aplicación y splash screen
+│       └── src/
+│           ├── app/           # Rutas basadas en archivos (Expo Router)
+│           │   ├── (tabs)/    # Tabs: index, history, new-action (+), budgets, profile
+│           │   ├── _layout.tsx# Layout raíz y configuración de modales
+│           │   └── new-expense.tsx # Modal de registro de gasto
+│           ├── core/          # Núcleo compartido del sistema
+│           │   ├── db/        # Drizzle schema, cliente SQLite, outbox, init & seeds
+│           │   ├── dev/       # Constantes y mocks de desarrollo (DEV_USER_ID)
+│           │   ├── theme/     # Tokens de color, tipografía, espaciado e iconos
+│           │   └── ui/        # Componentes base (Icon de Lucide, Placeholders)
+│           └── features/      # Módulos por dominio de negocio (Feature-First)
+│               ├── categories/# Selector de categoría, creación in-flow y sugerencia
+│               └── transactions/# Repositorio de transacciones, esquemas Zod y UI
 ├── docs/
-│   ├── ARQUITECTURA_TECNICA.md
-│   └── OPERACIONES.md
-├── RESUMEN_PROYECTO.md        # Catálogo de requisitos y clasificación MoSCoW
-└── README.md
+│   ├── ARQUITECTURA_TECNICA.md# Arquitectura a detalle, límites $0 y diagramas
+│   ├── CATALOGO_REQUISITOS.md # Catálogo oficial de requerimientos funcionales y no funcionales
+│   └── OPERACIONES.md         # Manual de operaciones, migraciones y convenciones
+├── README.md
 ```
 
 ---
 
-## Requisitos previos
+## Instalación y Puesta en Marcha
 
-| Herramienta | Versión | Nota |
-| :--- | :--- | :--- |
-| **Node.js** | ≥ 20 LTS | <https://nodejs.org> |
-| **npm** | ≥ 10 | o `pnpm`/`yarn` a elección |
-| **Git** | ≥ 2.40 | |
-| **Supabase CLI** | última | `npm i -g supabase` |
-| **Expo CLI** | incluida (`npx expo`) | `npm i -g eas-cli` para builds en la nube |
-| Android Studio | solo Android | Opcional: emulador. **Los builds se pueden hacer en la nube** |
-| Xcode | solo iOS | Opcional: simulador en macOS |
-| Java JDK | 17+ | Solo necesario para build local de Android |
+### Requisitos Previos
+* **Node.js** v20 LTS o superior
+* **npm** v10 o superior (o `pnpm` / `yarn`)
+* **Dispositivo móvil** con la aplicación **Expo Go** instalada (Android o iOS), o un emulador configurado en Android Studio / Xcode.
+
+### Pasos de Instalación
+
+1. **Clonar el repositorio:**
+   ```bash
+   git clone https://github.com/<tu-organizacion>/AhorRaso.git
+   cd AhorRaso
+   ```
+
+2. **Instalar dependencias del proyecto móvil:**
+   ```bash
+   cd apps/mobile
+   npm install
+   ```
+
+3. **Iniciar el entorno de desarrollo:**
+   ```bash
+   npx expo start
+   ```
+
+4. **Visualizar la aplicación:**
+   - **En dispositivo físico:** Escanea el código QR que aparece en la terminal usando la cámara (iOS) o la app **Expo Go** (Android).
+   - **En emulador Android:** Presiona la tecla `a` en la terminal.
+   - **En simulador iOS (macOS):** Presiona la tecla `i` en la terminal.
+   - **En navegador web:** Presiona la tecla `w` en la terminal.
 
 ---
 
-## Puesta en marcha
+## Configuración de Stitch MCP (Opcional)
 
-> Los pasos aplican una vez ejecutado el *scaffolding* de la app (**Sprint 0**).
-> El esquema de comandos sigue el estándar de Expo + Supabase CLI.
+Si utilizas asistentes o agentes de desarrollo impulsados por IA (como Antigravity, Claude Code o Cursor), puedes conectar el servidor MCP de Google Stitch para consultar e interactuar con los mocks oficiales de diseño directamente en tu flujo de trabajo.
 
-```bash
-# 1. Clonar
-git clone https://github.com/<org>/AhorRaso.git
-cd AhorRaso
+> ⚠️ **Seguridad:** La configuración de MCP contiene rutas locales y claves personales. **Nunca se commitea en el repositorio Git**.
 
-# 2. Instalar dependencias
-npm install
+Agrega la configuración en tu archivo `mcp_config.json` local:
 
-# 3. Variables de entorno
-cp .env.example .env
-#   EXPO_PUBLIC_SUPABASE_URL=...
-#   EXPO_PUBLIC_SUPABASE_ANON_KEY=...
-#   Las claves de IA (GROQ_API_KEY, GEMINI_API_KEY) van SOLO en
-#      Supabase Secrets, nunca en .env de la app.
-
-# 4.Levantar Supabase local (opcional pero recomendado en dev)
-supabase start
-supabase db reset
-
-# 5. Ejecutar la app
-npx expo start              # Expo Go (funcionalidades sin módulos nativos)
-npx expo run:android        # development build (requerido para VOZ y BIOMETRÍA)
-npx expo run:ios            # development build iOS (requiere macOS)
+```json
+{
+  "mcpServers": {
+    "stitch": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@google/stitch-mcp"
+      ],
+      "env": {
+        "STITCH_API_KEY": "<TU_API_KEY_DE_STITCH>",
+        "STITCH_PROJECT_ID": "17338312379497379811"
+      }
+    }
+  }
+}
 ```
 
-> **Importante:** las funciones de **voz** y **biometría** usan módulos nativos,
-> por lo que necesitan un *development build* (`expo-dev-client`), no Expo Go.
-> En la nube: `eas build --platform android --profile development`.
-
 ---
 
-## Base de datos y migraciones
+## Equipo de Desarrollo
 
-```bash
-supabase migration new add_transactions   # crea archivo SQL
-# ... escribir el DDL ...
-supabase db reset                          # aplicar en local
-supabase db push                           # aplicar en remoto (producción)
-```
+El proyecto está organizado en 3 roles de desarrollo full-stack con fronteras modulares claras:
 
-**Convenciones obligatorias:**
-
-- Toda tabla nueva lleva `user_id uuid NOT NULL REFERENCES auth.users(id)` y su **política RLS**:
-  ```sql
-  ALTER TABLE transactions ENABLE ROW LEVEL SECURITY;
-  CREATE POLICY own_rows ON transactions
-    FOR ALL USING (auth.uid() = user_id)
-    WITH CHECK (auth.uid() = user_id);
-  ```
-- Índices compuestos para el dashboard: `(user_id, occurred_on DESC)` y `(user_id, updated_at)` para el sync pull.
-- IDs generados en el **cliente** (UUIDv4) para que las escrituras offline sean idempotentes.
-- Nunca editar el schema desde el dashboard en producción: solo migraciones versionadas.
-
----
-
-## Scripts disponibles
-
-| Comando | Descripción |
+| Desarrollador | Módulos y Responsabilidades |
 | :--- | :--- |
-| `npm run start` | Inicia el servidor de desarrollo de Expo |
-| `npm run android` / `npm run ios` | Ejecuta en emulador/dispositivo |
-| `npm run lint` | ESLint + reglas de convención |
-| `npm run typecheck` | `tsc --noEmit` |
-| `npm test` | Suite de pruebas unitarias (Jest) |
-| `npm run test:coverage` | Cobertura con reporte |
-| `npm run test:e2e` | Pruebas E2E con Maestro |
-| `npm run db:migrate` | Aplica migraciones de Supabase en local |
-| `npm run build:preview` | `eas build -p android --profile preview` (APK interno) |
-
-> ℹEstos scripts se habilitan con el *scaffolding* del monorepo (**Sprint 0**).
-> Mientras tanto el repositorio contiene la fase de planificación: catálogo de
-> requisitos, plantillas de issues y arquitectura. Ver [Estado del proyecto](#-estado-del-proyecto).
+| **Dev A** | **Transacciones & Categorías:** Persistencia offline local (SQLite + Drizzle), cola Outbox, formulario de gastos (`RF-002`), gestión de categorías (`RF-004`/`RF-005`), navegación shell, dashboard base e historial (`RF-008`/`RF-009`). |
+| **Dev B** | **Presupuestos & Metas:** Motor de presupuestos por categoría y periodo (`RF-006`), alertas automáticas de sobregiro (`RF-010`/`RF-011`) y proyección de metas de ahorro (`RF-007`). |
+| **Dev C** | **Voz, IA & Seguridad:** Módulo de voz Speech-to-Text on-device (`RF-003`), Edge Functions del AI Gateway con Groq/Gemini (`RF-012`/`RF-013`) y autenticación local por PIN y biometría (`RF-018`). |
 
 ---
 
-## Pruebas
+## Documentación del Repositorio
 
-| Nivel | Herramienta | Objetivo |
-| :--- | :--- | :--- |
-| Unitarias | **Jest** + `ts-jest` | Lógica de `domain/` (cálculos, validaciones, parser de voz) — cobertura objetivo ≥ 70 % |
-| Componentes | **React Native Testing Library** | Interacción de formularios y listas |
-| Integración | Jest + **Supabase local** | Políticas RLS (usuario A no lee datos de usuario B) |
-| E2E | **Maestro** (YAML, gratis) | Flujos críticos: login → gasto → dashboard → alerta |
-| Sync | Tests de idempotencia | Reenvío del mismo outbox no duplica registros |
-
-```bash
-npm test                  # unitarias
-npm run test:e2e          # Maestro (emulador corriendo)
-```
+* [`docs/ARQUITECTURA_TECNICA.md`](docs/ARQUITECTURA_TECNICA.md): Especificación detallada de arquitectura, límites de cuotas de free tier y análisis de riesgos.
+* [`docs/CATALOGO_REQUISITOS.md`](docs/CATALOGO_REQUISITOS.md): Matriz de requerimientos funcionales (RF) y no funcionales (RNF).
+* [`docs/OPERACIONES.md`](docs/OPERACIONES.md): Convenciones de código, runbooks de migración y monitoreo.
 
 ---
 
-## Integraciones: voz e IA
+## Licencia
 
-### Voz (RF-003) — $0
-1. `expo-speech-recognition` transcribe con los servicios **on-device** del sistema (SFSpeechRecognizer / Android SpeechRecognizer).
-2. Un parser local con regex extrae monto, categoría y fecha (resuelve la mayoría de casos **sin llamada a IA**).
-3. Solo si la confianza es baja se consulta el **AI Gateway** para estructurar el gasto.
-4. El usuario **confirma** antes de guardar (evita registros erróneos).
-
-### IA (RF-012 / RF-013) — $0
-- Toda llamada pasa por `supabase/functions/ai-gateway`: verifica JWT → aplica cuota por usuario → busca en **cache** → llama a **Groq** → si falla **Gemini** → si falla **OpenRouter** → si todos fallan, **respuesta determinista local**.
-- El análisis de patrones (RF-012) se calcula con SQL/estadística local: la IA solo redacta la recomendación (RF-013), así el free tier nunca es cuello de botella.
-
----
-
-## Documentación
-
-| Documento | Contenido |
-| :--- | :--- |
-| [`docs/ARQUITECTURA_TECNICA.md`](docs/ARQUITECTURA_TECNICA.md) | Stack completo, límites de free tier, diagramas, offline-first, RNF, despliegue y riesgos |
-| [`docs/OPERACIONES.md`](docs/OPERACIONES.md) | Runbook: keep-alive, backups, migraciones, secretos, monitoreo e incidentes |
-| [`RESUMEN_PROYECTO.md`](RESUMEN_PROYECTO.md) | Catálogo de requisitos RF/RNF y clasificación MoSCoW |
-| `.github/ISSUE_TEMPLATE/` | Plantillas de Historia de Usuario y Requisito Funcional |
-
----
-
-## Costo total del proyecto
-
-| Concepto | Costo |
-| :--- | :--- |
-| Desarrollo, builds, backend, IA, CI/CD, monitoreo | **$0 USD** |
-| Publicación en Google Play (opcional) | USD 25 — pago único |
-| Publicación en App Store (opcional) | USD 99/año |
+Este proyecto está bajo la Licencia **MIT**. Consulta el archivo `LICENSE` para más información.

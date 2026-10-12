@@ -1,0 +1,32 @@
+# Env
+.env
+.env.local
+.env.*.local
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-error.log*
+
+# Expo
+.expo/
+dist/
+web-build/
+
+# Builds nativos
+*.apk
+*.aab
+*.ipa
+
+# Supabase local
+supabase/.branches
+supabase/.temp
+
+# Secrets
+*.pem
+*.key
+*.p12
+
+# AI Agents & Editor
+.agents/
+.claude/
