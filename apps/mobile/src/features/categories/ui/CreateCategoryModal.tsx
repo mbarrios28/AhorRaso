@@ -19,34 +19,79 @@ import {
   CURATED_COLORS,
 } from '../domain/icon-suggestions';
 import { categoriesRepository } from '../data/categories.repository';
-import { Category } from '../domain/types';
+import { Category, CATEGORY_NAME_MAX_LENGTH } from '../domain/types';
+import { CategoryError } from '../domain/errors';
 
 interface CreateCategoryModalProps {
   visible: boolean;
   onClose: () => void;
-  onCreated: (category: Category) => void;
+  /** Se invoca tras crear O actualizar exitosamente la categoría. */
+  onSaved: (category: Category) => void;
   type?: 'income' | 'expense';
   userId?: string;
+  /** Si se pasa una categoría, el modal entra en modo EDICIÓN (RF-005). */
+  editingCategory?: Category | null;
 }
 
 export const CreateCategoryModal: React.FC<CreateCategoryModalProps> = ({
   visible,
   onClose,
-  onCreated,
+  onSaved,
   type = 'expense',
   userId = DEV_USER_ID,
+  editingCategory = null,
 }) => {
-  const [name, setName] = useState('');
-  const [icon, setIcon] = useState('Utensils');
-  const [color, setColor] = useState<string>(CURATED_COLORS[0]);
+  // El formulario se monta solo mientras el modal está visible: cada apertura
+  // lo remonta con estado inicial fresco (nombre/icono/color del modo edición
+  // o vacíos en modo creación) sin necesidad de efectos de reset.
+  return (
+    <Modal
+      visible={visible}
+      transparent
+      animationType="fade"
+      onRequestClose={onClose}
+    >
+      {visible ? (
+        <CreateCategoryForm
+          onClose={onClose}
+          onSaved={onSaved}
+          type={type}
+          userId={userId}
+          editingCategory={editingCategory}
+        />
+      ) : null}
+    </Modal>
+  );
+};
+
+interface CreateCategoryFormProps
+  extends Omit<CreateCategoryModalProps, 'visible'> {
+  editingCategory: Category | null;
+}
+
+const CreateCategoryForm: React.FC<CreateCategoryFormProps> = ({
+  onClose,
+  onSaved,
+  type = 'expense',
+  userId = DEV_USER_ID,
+  editingCategory = null,
+}) => {
+  const isEditMode = !!editingCategory;
+
+  const [name, setName] = useState(editingCategory?.name ?? '');
+  const [icon, setIcon] = useState(editingCategory?.icon ?? 'Utensils');
+  const [color, setColor] = useState<string>(editingCategory?.color ?? CURATED_COLORS[0]);
   const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
   const handleNameChange = (text: string) => {
     setName(text);
     setError(null);
-    const suggested = suggestCategoryIcon(text);
-    if (suggested !== 'Tag') {
-      setIcon(suggested);
+    if (!isEditMode) {
+      const suggested = suggestCategoryIcon(text);
+      if (suggested !== 'Tag') {
+        setIcon(suggested);
+      }
     }
   };
 
@@ -56,38 +101,53 @@ export const CreateCategoryModal: React.FC<CreateCategoryModalProps> = ({
       return;
     }
 
+    setSaving(true);
     try {
-      const created = categoriesRepository.create(userId, {
-        name: name.trim(),
-        type,
-        icon,
-        color,
-      });
+      const saved = isEditMode
+        ? categoriesRepository.update(userId, editingCategory.id, {
+            name: name.trim(),
+            type: editingCategory.type,
+            icon,
+            color,
+          })
+        : categoriesRepository.create(userId, {
+            name: name.trim(),
+            type,
+            icon,
+            color,
+          });
+
       // Limpiar y notificar
       setName('');
       setError(null);
-      onCreated(created);
+      onSaved(saved);
       onClose();
-    } catch (e: any) {
-      setError(e?.message || 'Error al guardar categoría');
+    } catch (e) {
+      // Los errores de dominio ya traen mensajes comprensibles; los de Zod
+      // se convierten en CategoryError('VALIDATION') dentro del repositorio.
+      setError(
+        e instanceof CategoryError
+          ? e.message
+          : e instanceof Error && e.message
+            ? e.message
+            : 'Error al guardar la categoría'
+      );
+    } finally {
+      setSaving(false);
     }
   };
 
   return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="fade"
-      onRequestClose={onClose}
+    <KeyboardAvoidingView
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      style={styles.overlay}
     >
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        style={styles.overlay}
-      >
-        <View style={styles.sheet}>
+      <View style={styles.sheet}>
           {/* Header */}
           <View style={styles.header}>
-            <Text style={styles.title}>Nueva categoría</Text>
+            <Text style={styles.title}>
+              {isEditMode ? 'Editar categoría' : 'Nueva categoría'}
+            </Text>
             <Pressable onPress={onClose} style={styles.closeBtn}>
               <Icon name="X" size={20} color={colors.ink2} />
             </Pressable>
@@ -111,8 +171,8 @@ export const CreateCategoryModal: React.FC<CreateCategoryModalProps> = ({
                 placeholder="Ej. Fotocopias, Combi, Tacos..."
                 placeholderTextColor={colors.ink3}
                 style={[styles.input, error ? styles.inputError : null]}
-                autoFocus
-                maxLength={40}
+                autoFocus={!isEditMode}
+                maxLength={CATEGORY_NAME_MAX_LENGTH}
               />
               {error && <Text style={styles.errorText}>{error}</Text>}
             </View>
@@ -121,7 +181,7 @@ export const CreateCategoryModal: React.FC<CreateCategoryModalProps> = ({
             <View style={styles.fieldGroup}>
               <View style={styles.labelRow}>
                 <Text style={styles.fieldLabel}>ICONO</Text>
-                <Text style={styles.suggestionHint}>Sugerido por palabra clave</Text>
+                {!isEditMode && <Text style={styles.suggestionHint}>Sugerido por palabra clave</Text>}
               </View>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.iconScroll}>
                 {CURATED_ICONS.map((iconName) => {
@@ -170,17 +230,24 @@ export const CreateCategoryModal: React.FC<CreateCategoryModalProps> = ({
           <View style={styles.footer}>
             <Pressable
               onPress={handleSave}
+              disabled={saving}
               style={({ pressed }) => [
                 styles.saveButton,
+                saving && styles.saveButtonDisabled,
                 pressed && { opacity: 0.9, transform: [{ scale: 0.99 }] },
               ]}
             >
-              <Text style={styles.saveButtonText}>Guardar categoría</Text>
+              <Text style={styles.saveButtonText}>
+                {saving
+                  ? 'Guardando...'
+                  : isEditMode
+                    ? 'Guardar cambios'
+                    : 'Guardar categoría'}
+              </Text>
             </Pressable>
           </View>
         </View>
-      </KeyboardAvoidingView>
-    </Modal>
+    </KeyboardAvoidingView>
   );
 };
 
@@ -314,6 +381,9 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  saveButtonDisabled: {
+    opacity: 0.6,
   },
   saveButtonText: {
     ...typography.labelLarge,

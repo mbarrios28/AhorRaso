@@ -1,7 +1,7 @@
 import React, { useState, useCallback } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useFocusEffect } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { colors, spacing, radius, typography } from '@/core/theme';
 import { Icon } from '@/core/ui';
 import { db, profile, Profile } from '@/core/db';
@@ -74,6 +74,25 @@ export default function ProfileTab() {
               <Text style={styles.rowValue}>{userProfile?.timezone || 'America/Lima'}</Text>
             </View>
           </View>
+        </View>
+
+        {/* Categorías (RF-005) */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>CATEGORÍAS</Text>
+          <Pressable
+            onPress={() => router.push('/categories')}
+            style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
+            accessibilityRole="button"
+            accessibilityLabel="Gestionar categorías"
+          >
+            <View style={styles.row}>
+              <View style={styles.rowLeft}>
+                <Icon name="Tags" size={18} color={colors.primary} />
+                <Text style={styles.rowLabel}>Gestionar categorías</Text>
+              </View>
+              <Icon name="ChevronRight" size={18} color={colors.ink3} />
+            </View>
+          </Pressable>
         </View>
 
         {/* Seguridad y Datos */}
@@ -191,6 +210,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderRadius: radius.md,
     padding: spacing.base,
+  },
+  cardPressed: {
+    backgroundColor: colors.surface2,
   },
   row: {
     flexDirection: 'row',

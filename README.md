@@ -63,7 +63,12 @@ La plataforma resuelve los problemas más comunes de la gestión financiera manu
 
 ### 🏷️ Categorización Inteligente y Creación In-Flow
 - Categorías organizadas con colores dinámicos e iconos de Lucide.
+- Catálogo inicial con 16 categorías protegidas (10 de gasto y 6 de ingreso), sembrado idempotente que nunca duplica ni pisa categorías del usuario.
 - Creación de categorías personalizadas directamente dentro del flujo de gasto sin abandonar la pantalla.
+- Pantalla de gestión de categorías (`/categories`): crear, renombrar, recolorear y eliminar categorías propias.
+- Las categorías por defecto del sistema son protegidas: no pueden editarse ni eliminarse.
+- Política de eliminación **restringida**: una categoría con movimientos asociados no se elimina; la app informa cuántos movimientos hay que reasignar antes.
+- Reasignación de categoría desde el historial de movimientos (`RF-004`), con validación de tipo (ingreso/gasto) en la capa de datos.
 - Sugerencia automática de iconos contextualizada al entorno universitario peruano (*combi*, *menú*, *fotocopias*, *chelas*, etc.).
 
 ### 📊 Presupuestos Dinámicos y Alertas de Sobregiro
@@ -168,6 +173,7 @@ AhorRaso/
 │           ├── app/           # Rutas basadas en archivos (Expo Router)
 │           │   ├── (tabs)/    # Tabs: index, history, new-action (+), budgets, profile
 │           │   ├── _layout.tsx# Layout raíz y configuración de modales
+│           │   ├── categories.tsx # Pantalla de gestión de categorías (RF-005)
 │           │   └── new-expense.tsx # Modal de registro de gasto
 │           ├── core/          # Núcleo compartido del sistema
 │           │   ├── db/        # Drizzle schema, cliente SQLite, outbox, init & seeds
@@ -175,8 +181,10 @@ AhorRaso/
 │           │   ├── theme/     # Tokens de color, tipografía, espaciado e iconos
 │           │   └── ui/        # Componentes base (Icon de Lucide, Placeholders)
 │           └── features/      # Módulos por dominio de negocio (Feature-First)
-│               ├── categories/# Selector de categoría, creación in-flow y sugerencia
+│               ├── categories/# Selector de categoría, creación in-flow y gestión (RF-004/RF-005)
 │               └── transactions/# Repositorio de transacciones, esquemas Zod y UI
+│       ├── test/               # Infraestructura de pruebas (mocks de Expo/SQLite y helpers)
+│       ├── jest.config.js      # Configuración de Jest (ts-jest + node:sqlite)
 ├── docs/
 │   ├── ARQUITECTURA_TECNICA.md# Arquitectura a detalle, límites $0 y diagramas
 │   ├── CATALOGO_REQUISITOS.md # Catálogo oficial de requerimientos funcionales y no funcionales
@@ -216,6 +224,20 @@ AhorRaso/
    - **En dispositivo físico:** Escanea el código QR que aparece en la terminal usando la cámara (iOS) o la app **Expo Go** (Android).
    - **En emulador Android:** Presiona la tecla `a` en la terminal.
    - **En simulador iOS (macOS):** Presiona la tecla `i` en la terminal.
+
+### Verificación (pruebas, tipos y lint)
+
+Desde `apps/mobile`:
+
+```bash
+npm test            # Suite Jest: dominio + repositorios (SQLite en memoria)
+npm run typecheck   # TypeScript estricto sin emitir (npx tsc --noEmit)
+npm run lint        # ESLint con la config oficial de Expo
+```
+
+Las pruebas unitarias de dominio son puras (sin mocks) y las de integración corren
+sobre SQLite real en memoria vía `node:sqlite` (Node ≥ 22), por lo que no requieren
+emulador ni dispositivo.
    - **En navegador web:** Presiona la tecla `w` en la terminal.
 
 ---

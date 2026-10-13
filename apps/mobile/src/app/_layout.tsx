@@ -10,13 +10,17 @@ export default function RootLayout() {
   const [dbReady, setDbReady] = useState(false);
 
   useEffect(() => {
-    try {
-      initDatabase();
+    // initDatabase() es síncrono; se difiere el setState al microtask para
+    // no renderizar en cascada desde el cuerpo del efecto (regla
+    // react-hooks/set-state-in-effect) manteniendo la misma conducta.
+    queueMicrotask(() => {
+      try {
+        initDatabase();
+      } catch (e) {
+        console.error('Error al inicializar la base de datos local:', e);
+      }
       setDbReady(true);
-    } catch (e) {
-      console.error('Error al inicializar la base de datos local:', e);
-      setDbReady(true);
-    }
+    });
   }, []);
 
   if ((!fontsLoaded && !fontError) || !dbReady) {
@@ -44,6 +48,13 @@ export default function RootLayout() {
             presentation: 'modal',
             headerShown: false,
             animation: 'slide_from_bottom',
+          }}
+        />
+        <Stack.Screen
+          name="categories"
+          options={{
+            headerShown: false,
+            animation: 'slide_from_right',
           }}
         />
       </Stack>
