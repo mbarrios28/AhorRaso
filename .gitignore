@@ -29,4 +29,9 @@ supabase/.temp
 
 # AI Agents & Editor
 .agents/
-.claude/
+.claude/
+# Bases de datos locales (nunca se commitean; en runtime viven en el sandbox de la app)
+*.db
+*.db-journal
+*.db-wal
+*.db-shm

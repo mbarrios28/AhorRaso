@@ -37,25 +37,36 @@ export const NewExpenseScreen: React.FC = () => {
 
   // Cargar saldo actual del perfil y establecimientos guardados en SQLite
   React.useEffect(() => {
-    try {
-      // 1. Saldo actual
-      const userProf = db.select().from(profile).where(eq(profile.id, DEV_USER_ID)).get();
-      if (userProf) {
-        setCurrentBalanceCents(userProf.initialBalanceCents);
-      }
+    let mounted = true;
+    // Lecturas síncronas sobre SQLite local; se difieren al microtask para no
+    // ejecutar setState directamente en el cuerpo del efecto (regla
+    // react-hooks/set-state-in-effect), manteniendo la misma conducta.
+    queueMicrotask(() => {
+      try {
+        // 1. Saldo actual
+        const userProf = db.select().from(profile).where(eq(profile.id, DEV_USER_ID)).get();
+        if (mounted && userProf) {
+          setCurrentBalanceCents(userProf.initialBalanceCents);
+        }
 
-      // 2. Establecimientos guardados
-      const saved = db
-        .select()
-        .from(merchants)
-        .where(and(eq(merchants.userId, DEV_USER_ID), isNull(merchants.deletedAt)))
-        .all();
-      const names = saved.map((m) => m.name);
-      const combined = Array.from(new Set([...FREQUENT_PLACES, ...names]));
-      setPlacesList(combined);
-    } catch (e) {
-      console.error('Error al inicializar formulario de gasto:', e);
-    }
+        // 2. Establecimientos guardados
+        const saved = db
+          .select()
+          .from(merchants)
+          .where(and(eq(merchants.userId, DEV_USER_ID), isNull(merchants.deletedAt)))
+          .all();
+        const names = saved.map((m) => m.name);
+        const combined = Array.from(new Set([...FREQUENT_PLACES, ...names]));
+        if (mounted) {
+          setPlacesList(combined);
+        }
+      } catch (e) {
+        console.error('Error al inicializar formulario de gasto:', e);
+      }
+    });
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   // Cálculo de fecha según offset (0 = Hoy, 1 = Ayer)

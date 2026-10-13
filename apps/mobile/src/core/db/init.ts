@@ -4,18 +4,36 @@ import { DEV_USER_ID, DEV_USER_PROFILE } from '../dev/constants';
 
 /**
  * Semilla de categorías iniciales obligatorias por especificación del proyecto.
+ *
+ * Catálogo base original del proyecto ampliado (RF-004/RF-005) con las
+ * categorías esenciales del catálogo funcional. Se conservan los nombres
+ * oficiales ya existentes ("Diversión" cubre Entretenimiento, "Sueldo" cubre
+ * Salario) para no duplicar categorías semánticas en instalaciones previas.
+ *
+ * Reglas de la semilla:
+ * - Idempotente por fila: se compara (user_id, type, name) contra categorías
+ *   activas; re-ejecutar nunca duplica ni sobrescribe categorías personalizadas.
+ * - `sort_order` estable por tipo para que el orden no salte entre versiones.
  */
 export const DEFAULT_CATEGORIES = [
-  // Gastos
+  // ── Gastos ──
   { name: 'Alimentación', type: 'expense' as const, icon: 'Utensils', color: '#F97316', sortOrder: 1 },
   { name: 'Transporte', type: 'expense' as const, icon: 'Bus', color: '#3B82F6', sortOrder: 2 },
   { name: 'Diversión', type: 'expense' as const, icon: 'Gamepad2', color: '#A855F7', sortOrder: 3 },
   { name: 'Servicios', type: 'expense' as const, icon: 'Lightbulb', color: '#14B8A6', sortOrder: 4 },
   { name: 'Educación', type: 'expense' as const, icon: 'GraduationCap', color: '#6366F1', sortOrder: 5 },
   { name: 'Salud', type: 'expense' as const, icon: 'Heart', color: '#EF4444', sortOrder: 6 },
-  // Ingresos
+  { name: 'Vivienda', type: 'expense' as const, icon: 'Home', color: '#F59E0B', sortOrder: 7 },
+  { name: 'Compras', type: 'expense' as const, icon: 'ShoppingBag', color: '#EC4899', sortOrder: 8 },
+  { name: 'Deudas y obligaciones', type: 'expense' as const, icon: 'CreditCard', color: '#DF6C6B', sortOrder: 9 },
+  { name: 'Otros gastos', type: 'expense' as const, icon: 'Tag', color: '#64748B', sortOrder: 10 },
+  // ── Ingresos ──
   { name: 'Sueldo', type: 'income' as const, icon: 'Wallet', color: '#10B981', sortOrder: 7 },
   { name: 'Propina', type: 'income' as const, icon: 'Gift', color: '#22C55E', sortOrder: 8 },
+  { name: 'Trabajo independiente', type: 'income' as const, icon: 'Briefcase', color: '#0EA371', sortOrder: 9 },
+  { name: 'Negocios', type: 'income' as const, icon: 'Store', color: '#14B8A6', sortOrder: 10 },
+  { name: 'Inversiones', type: 'income' as const, icon: 'TrendingUp', color: '#3B82F6', sortOrder: 11 },
+  { name: 'Otros ingresos', type: 'income' as const, icon: 'Coins', color: '#64748B', sortOrder: 12 },
 ] as const;
 
 /**
@@ -147,21 +165,35 @@ export function initDatabase(): void {
     );
   }
 
-  // 3. Sembrado de Categorías iniciales por defecto
-  const countRow = sqliteDb.getFirstSync<{ count: number }>(
-    'SELECT count(*) as count FROM categories WHERE user_id = ? AND deleted_at IS NULL',
+  // 3. Sembrado de Categorías iniciales por defecto (idempotente por fila).
+  //    Se inserta únicamente si no existe una categoría ACTIVA con el mismo
+  //    (nombre normalizado, tipo). Así se respeta el índice único parcial
+  //    `idx_categories_unique_name` y jamás se duplican ni se pisan categorías
+  //    personalizadas del usuario, sin importar cuántas veces se ejecute.
+  const existingActive = sqliteDb.getAllSync<{ name: string; type: string }>(
+    'SELECT name, type FROM categories WHERE user_id = ? AND deleted_at IS NULL',
     [DEV_USER_ID]
   );
+  const activeKeys = new Set(
+    existingActive.map((c) => `${c.type}::${c.name.trim().toLowerCase()}`)
+  );
 
-  if (!countRow || countRow.count === 0) {
-    for (const cat of DEFAULT_CATEGORIES) {
-      const catId = Crypto.randomUUID();
-      sqliteDb.runSync(
-        `INSERT INTO categories (
-          id, user_id, name, type, icon, color, is_default, sort_order, created_at, client_updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?)`,
-        [catId, DEV_USER_ID, cat.name, cat.type, cat.icon, cat.color, cat.sortOrder, now, now]
-      );
-    }
+  let inserted = 0;
+  for (const cat of DEFAULT_CATEGORIES) {
+    const key = `${cat.type}::${cat.name.trim().toLowerCase()}`;
+    if (activeKeys.has(key)) continue;
+
+    const catId = Crypto.randomUUID();
+    sqliteDb.runSync(
+      `INSERT INTO categories (
+        id, user_id, name, type, icon, color, is_default, sort_order, created_at, client_updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?)`,
+      [catId, DEV_USER_ID, cat.name, cat.type, cat.icon, cat.color, cat.sortOrder, now, now]
+    );
+    inserted += 1;
+  }
+
+  if (inserted > 0) {
+    console.info(`[initDatabase] Semilla de categorías: ${inserted} categorías por defecto añadidas.`);
   }
 }

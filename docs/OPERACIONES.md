@@ -107,6 +107,18 @@ psql "$DATABASE_URL_DEV" -f restored.sql   # o supabase db reset + restore
 - Las migraciones destructivas requieren backup previo (§2) y ventana de mantenimiento.
 - El schema se modifica solo con la CLI, nunca desde el dashboard en producción.
 
+**Verificación local de la app (previa a cada PR), desde `apps/mobile`:**
+
+```bash
+npm test            # Dominio + repositorios sobre SQLite en memoria (Jest)
+npm run typecheck   # TypeScript estricto (npx tsc --noEmit)
+npm run lint        # ESLint (config oficial de Expo)
+```
+
+La semilla de categorías por defecto (`initDatabase`) es idempotente por fila: re-ejecutarla
+nunca duplica categorías ni pisa las personalizadas del usuario, por lo que es segura en
+cualquier release o restore de backup local.
+
 ### Release de la app
 
 ```bash

@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from 'expo-router';
 import { colors, spacing, radius, typography } from '@/core/theme';
@@ -7,6 +7,7 @@ import { Icon } from '@/core/ui';
 import { db, transactions, categories, Transaction, Category } from '@/core/db';
 import { DEV_USER_ID } from '@/core/dev/constants';
 import { eq, desc, isNull, and } from 'drizzle-orm';
+import { EditTransactionCategoryModal } from '@/features/transactions';
 
 interface HistoryItem extends Transaction {
   category?: Category;
@@ -15,40 +16,45 @@ interface HistoryItem extends Transaction {
 export default function HistoryTab() {
   const [items, setItems] = useState<HistoryItem[]>([]);
   const [totalSpentCents, setTotalSpentCents] = useState(0);
+  const [selectedTx, setSelectedTx] = useState<Transaction | null>(null);
+
+  const loadHistory = useCallback(() => {
+    try {
+      const txList = db
+        .select()
+        .from(transactions)
+        .where(
+          and(
+            eq(transactions.userId, DEV_USER_ID),
+            isNull(transactions.deletedAt)
+          )
+        )
+        .orderBy(desc(transactions.occurredOn), desc(transactions.createdAt))
+        .all();
+
+      const allCats = db.select().from(categories).where(eq(categories.userId, DEV_USER_ID)).all();
+      const catMap = new Map(allCats.map((c) => [c.id, c]));
+
+      const enriched = txList.map((tx) => ({
+        ...tx,
+        category: catMap.get(tx.categoryId),
+      }));
+
+      setItems(enriched);
+
+      const sum = txList
+        .filter((t) => t.type === 'expense')
+        .reduce((acc, curr) => acc + curr.amountCents, 0);
+      setTotalSpentCents(sum);
+    } catch (e) {
+      console.error('Error al cargar historial:', e);
+    }
+  }, []);
 
   useFocusEffect(
     useCallback(() => {
-      try {
-        const txList = db
-          .select()
-          .from(transactions)
-          .where(
-            and(
-              eq(transactions.userId, DEV_USER_ID),
-              isNull(transactions.deletedAt)
-            )
-          )
-          .orderBy(desc(transactions.occurredOn), desc(transactions.createdAt))
-          .all();
-
-        const allCats = db.select().from(categories).where(eq(categories.userId, DEV_USER_ID)).all();
-        const catMap = new Map(allCats.map((c) => [c.id, c]));
-
-        const enriched = txList.map((tx) => ({
-          ...tx,
-          category: catMap.get(tx.categoryId),
-        }));
-
-        setItems(enriched);
-
-        const sum = txList
-          .filter((t) => t.type === 'expense')
-          .reduce((acc, curr) => acc + curr.amountCents, 0);
-        setTotalSpentCents(sum);
-      } catch (e) {
-        console.error('Error al cargar historial:', e);
-      }
-    }, [])
+      loadHistory();
+    }, [loadHistory])
   );
 
   return (
@@ -88,7 +94,13 @@ export default function HistoryTab() {
                 const cat = tx.category;
                 const formatted = (tx.amountCents / 100).toFixed(2);
                 return (
-                  <View key={tx.id} style={styles.row}>
+                  <Pressable
+                    key={tx.id}
+                    onPress={() => setSelectedTx(tx)}
+                    style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Cambiar categoría del movimiento ${cat?.name || 'sin categoría'} de ${formatted} soles`}
+                  >
                     <View style={[styles.iconBox, { borderColor: colors.line }]}>
                       <Icon
                         name={cat?.icon || 'Tag'}
@@ -105,7 +117,8 @@ export default function HistoryTab() {
                       </Text>
                     </View>
                     <Text style={styles.rowAmount}>- S/ {formatted}</Text>
-                  </View>
+                    <Icon name="Pencil" size={13} color={colors.ink3} />
+                  </Pressable>
                 );
               })}
             </View>
@@ -118,10 +131,19 @@ export default function HistoryTab() {
             <Text style={styles.infoBadgeText}>RF-009 · HISTORIAL DE MOVIMIENTOS</Text>
           </View>
           <Text style={styles.infoText}>
-            Asignado a Dev A para paginación por keyset, filtros por fecha y búsqueda por comercio.
+            Toca un movimiento para cambiar su categoría (RF-004). Asignado a Dev A para paginación
+            por keyset, filtros por fecha y búsqueda por comercio.
           </Text>
         </View>
       </ScrollView>
+
+      {/* Modal de cambio de categoría (RF-004) */}
+      <EditTransactionCategoryModal
+        visible={selectedTx !== null}
+        transaction={selectedTx}
+        onClose={() => setSelectedTx(null)}
+        onSaved={() => loadHistory()}
+      />
     </SafeAreaView>
   );
 }
@@ -223,6 +245,9 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.md,
     borderBottomWidth: 1,
     borderBottomColor: colors.line,
+  },
+  rowPressed: {
+    backgroundColor: colors.surface2,
   },
   iconBox: {
     width: 36,
