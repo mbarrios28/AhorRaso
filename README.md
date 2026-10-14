@@ -14,8 +14,6 @@
 [![SQLite](https://img.shields.io/badge/SQLite-Native_JSI-003B57?style=for-the-badge&logo=sqlite&logoColor=white)](https://orm.drizzle.team)
 [![Drizzle ORM](https://img.shields.io/badge/Drizzle_ORM-0.38-C5F74F?style=for-the-badge&logo=drizzle&logoColor=black)](https://orm.drizzle.team)
 [![Supabase](https://img.shields.io/badge/Supabase-PostgreSQL_%2B_RLS-3FCF8E?style=for-the-badge&logo=supabase&logoColor=white)](https://supabase.com)
-[![Google Stitch](https://img.shields.io/badge/Google_Stitch-Design_System-4285F4?style=for-the-badge&logo=google&logoColor=white)](https://stitch.withgoogle.com/projects/17338312379497379811)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=for-the-badge)](LICENSE)
 
 </div>
 
