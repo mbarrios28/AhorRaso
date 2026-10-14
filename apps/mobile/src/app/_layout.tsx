@@ -51,6 +51,14 @@ export default function RootLayout() {
           }}
         />
         <Stack.Screen
+          name="new-income"
+          options={{
+            presentation: 'modal',
+            headerShown: false,
+            animation: 'slide_from_bottom',
+          }}
+        />
+        <Stack.Screen
           name="categories"
           options={{
             headerShown: false,

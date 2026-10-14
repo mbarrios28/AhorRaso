@@ -7,4 +7,6 @@
 export * from './domain/types';
 export * from './data/transactions.repository';
 export * from './ui/NewExpenseScreen';
+export * from './ui/NewIncomeScreen';
 export * from './ui/EditTransactionCategoryModal';
+

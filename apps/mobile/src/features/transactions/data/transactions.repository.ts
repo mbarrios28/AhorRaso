@@ -10,7 +10,12 @@ import {
   centsToPostgresAmount,
 } from '@/core/db';
 import { categoriesRepository } from '../../categories/data/categories.repository';
-import { CreateExpenseInput, createExpenseSchema } from '../domain/types';
+import {
+  CreateExpenseInput,
+  createExpenseSchema,
+  CreateIncomeInput,
+  createIncomeSchema,
+} from '../domain/types';
 
 export const transactionsRepository = {
   /**
@@ -145,6 +150,108 @@ export const transactionsRepository = {
 
     return newTx;
   },
+
+  /**
+   * Registra un ingreso offline en SQLite local, encola la mutación en outbox
+   * e incrementa el saldo disponible en tiempo real (RF-001).
+   *
+   * RF-004: la categoría se valida contra `categoriesRepository` antes de
+   * persistir (existe, activa, pertenece al usuario y es de tipo ingreso).
+   * Si la validación falla, no se crea la transacción.
+   */
+  createIncome(userId: string, input: CreateIncomeInput): Transaction {
+    // 1. Validar reglas de dominio con Zod
+    const validated = createIncomeSchema.parse(input);
+
+    // 2. Validar integridad de la categoría (RF-004) ANTES de escribir
+    categoriesRepository.getUsableForTransaction(userId, validated.categoryId, 'income');
+
+    const now = new Date().toISOString();
+    const txId = Crypto.randomUUID();
+
+    // 3. Crear transacción de ingreso
+    const newTx: Transaction = {
+      id: txId,
+      userId,
+      type: 'income',
+      amountCents: validated.amountCents,
+      occurredOn: validated.occurredOn,
+      categoryId: validated.categoryId,
+      merchantId: null,
+      paymentMethod: null,
+      source: validated.source,
+      note: validated.note || null,
+      entryMethod: validated.entryMethod,
+      createdAt: now,
+      clientUpdatedAt: now,
+      updatedAt: null,
+      deletedAt: null,
+    };
+
+    // Operación transaccional: inserción local, encolado de outbox y actualización de saldo
+    db.transaction((tx) => {
+      // Inserción en SQLite
+      tx.insert(transactions).values(newTx).run();
+
+      // Encolar en Outbox para PostgreSQL
+      enqueueOutbox({
+        entity: 'transactions',
+        entityId: txId,
+        op: 'upsert',
+        payload: {
+          id: txId,
+          user_id: userId,
+          type: 'income',
+          amount: centsToPostgresAmount(validated.amountCents),
+          occurred_on: validated.occurredOn,
+          category_id: validated.categoryId,
+          merchant_id: null,
+          payment_method: null,
+          source: validated.source,
+          note: validated.note || null,
+          entry_method: validated.entryMethod,
+          created_at: now,
+          client_updated_at: now,
+          deleted_at: null,
+        },
+      });
+
+      // Incrementar en tiempo real el saldo disponible en el perfil (RF-001)
+      const userProfile = tx.select().from(profile).where(eq(profile.id, userId)).get();
+      if (userProfile) {
+        const updatedBalance = userProfile.initialBalanceCents + validated.amountCents;
+        tx.update(profile)
+          .set({
+            initialBalanceCents: updatedBalance,
+            clientUpdatedAt: now,
+          })
+          .where(eq(profile.id, userId))
+          .run();
+      }
+    });
+
+    return newTx;
+  },
+
+  /**
+   * Obtiene los ingresos más recientes del usuario.
+   */
+  getRecentIncomes(userId: string, limit = 20): Transaction[] {
+    return db
+      .select()
+      .from(transactions)
+      .where(
+        and(
+          eq(transactions.userId, userId),
+          eq(transactions.type, 'income'),
+          isNull(transactions.deletedAt)
+        )
+      )
+      .orderBy(desc(transactions.occurredOn), desc(transactions.createdAt))
+      .limit(limit)
+      .all();
+  },
+
 
   /**
    * Obtiene los gastos más recientes del usuario.
