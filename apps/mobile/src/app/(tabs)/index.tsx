@@ -76,23 +76,45 @@ export default function DashboardScreen() {
           </View>
         </View>
 
-        {/* CTA Rápido para Nuevo Gasto (RF-002) */}
-        <Pressable
-          onPress={() => router.push('/new-expense')}
-          style={({ pressed }) => [
-            styles.ctaCard,
-            pressed && { opacity: 0.9, transform: [{ scale: 0.99 }] },
-          ]}
-        >
-          <View style={styles.ctaIcon}>
-            <Icon name="Plus" size={20} color="#0D0D0F" strokeWidth={2.4} />
-          </View>
-          <View style={styles.ctaContent}>
-            <Text style={styles.ctaTitle}>Registrar nuevo gasto</Text>
-            <Text style={styles.ctaSubtitle}>Captura rápida en punto de venta (RF-002)</Text>
-          </View>
-          <Icon name="ChevronRight" size={18} color={colors.ink3} />
-        </Pressable>
+        {/* CTAs Rápidos: Registrar Gasto (RF-002) y Registrar Ingreso (RF-001) */}
+        <View style={styles.ctaRow}>
+          <Pressable
+            onPress={() => router.push('/new-expense')}
+            style={({ pressed }) => [
+              styles.ctaCardHalf,
+              pressed && { opacity: 0.9, transform: [{ scale: 0.99 }] },
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel="Registrar nuevo gasto"
+          >
+            <View style={styles.ctaIconExpense}>
+              <Icon name="ArrowDownRight" size={18} color="#0D0D0F" strokeWidth={2.4} />
+            </View>
+            <View style={styles.ctaHalfContent}>
+              <Text style={styles.ctaHalfTitle}>Nuevo gasto</Text>
+              <Text style={styles.ctaHalfSubtitle}>Punto de venta (RF-002)</Text>
+            </View>
+          </Pressable>
+
+          <Pressable
+            onPress={() => router.push('/new-income')}
+            style={({ pressed }) => [
+              styles.ctaCardHalf,
+              styles.ctaCardIncome,
+              pressed && { opacity: 0.9, transform: [{ scale: 0.99 }] },
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel="Registrar nuevo ingreso"
+          >
+            <View style={styles.ctaIconIncome}>
+              <Icon name="ArrowUpRight" size={18} color="#0D0D0F" strokeWidth={2.4} />
+            </View>
+            <View style={styles.ctaHalfContent}>
+              <Text style={styles.ctaHalfTitle}>Nuevo ingreso</Text>
+              <Text style={styles.ctaHalfSubtitle}>Registrar entrada (RF-001)</Text>
+            </View>
+          </Pressable>
+        </View>
 
         {/* Lista de Movimientos Recientes */}
         <View style={styles.section}>
@@ -104,13 +126,18 @@ export default function DashboardScreen() {
           {recentExpenses.length === 0 ? (
             <View style={styles.emptyCard}>
               <Icon name="Receipt" size={28} color={colors.ink3} />
-              <Text style={styles.emptyText}>Aún no has registrado gastos hoy.</Text>
+              <Text style={styles.emptyText}>Aún no has registrado movimientos hoy.</Text>
             </View>
           ) : (
             <View style={styles.transactionsList}>
               {recentExpenses.map((tx) => {
                 const cat = tx.category;
+                const isIncome = tx.type === 'income';
                 const formattedAmount = (tx.amountCents / 100).toFixed(2);
+                const metaText = isIncome
+                  ? `${tx.source || 'Ingreso'}${tx.note ? ` · ${tx.note}` : ''} · ${tx.occurredOn}`
+                  : `${tx.note || (tx.paymentMethod === 'cash' ? 'Efectivo' : 'Yape / Plin')} · ${tx.occurredOn}`;
+
                 return (
                   <View key={tx.id} style={styles.txRow}>
                     <View
@@ -120,21 +147,26 @@ export default function DashboardScreen() {
                       ]}
                     >
                       <Icon
-                        name={cat?.icon || 'Tag'}
+                        name={cat?.icon || (isIncome ? 'Coins' : 'Tag')}
                         size={18}
-                        color={cat?.color || colors.primary}
+                        color={cat?.color || (isIncome ? colors.secondary : colors.primary)}
                       />
                     </View>
                     <View style={styles.txInfo}>
                       <Text style={styles.txCategoryName} numberOfLines={1}>
-                        {cat?.name || 'Gasto'}
+                        {cat?.name || (isIncome ? 'Ingreso' : 'Gasto')}
                       </Text>
                       <Text style={styles.txMeta} numberOfLines={1}>
-                        {tx.note || (tx.paymentMethod === 'cash' ? 'Efectivo' : 'Yape / Plin')} · {tx.occurredOn}
+                        {metaText}
                       </Text>
                     </View>
-                    <Text style={styles.txAmount}>
-                      - S/ {formattedAmount}
+                    <Text
+                      style={[
+                        styles.txAmount,
+                        isIncome && { color: colors.secondary },
+                      ]}
+                    >
+                      {isIncome ? '+ ' : '- '}S/ {formattedAmount}
                     </Text>
                   </View>
                 );
@@ -234,34 +266,52 @@ const styles = StyleSheet.create({
     ...typography.bodySmall,
     color: colors.ink3,
   },
-  ctaCard: {
+  ctaRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
+    gap: spacing.sm,
+  },
+  ctaCardHalf: {
+    flex: 1,
+    flexDirection: 'column',
+    alignItems: 'flex-start',
+    gap: spacing.xs,
     backgroundColor: colors.surface2,
     borderColor: colors.line,
     borderWidth: 1,
     borderRadius: radius.md,
-    padding: spacing.base,
+    padding: spacing.md,
   },
-  ctaIcon: {
-    width: 38,
-    height: 38,
-    borderRadius: radius.sm,
+  ctaCardIncome: {
+    backgroundColor: colors.surface,
+  },
+  ctaIconExpense: {
+    width: 32,
+    height: 32,
+    borderRadius: radius.xs,
     backgroundColor: colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  ctaContent: {
-    flex: 1,
+  ctaIconIncome: {
+    width: 32,
+    height: 32,
+    borderRadius: radius.xs,
+    backgroundColor: colors.secondary,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  ctaTitle: {
+  ctaHalfContent: {
+    marginTop: 2,
+  },
+  ctaHalfTitle: {
     ...typography.titleSmall,
     color: colors.ink,
+    fontSize: 13,
   },
-  ctaSubtitle: {
+  ctaHalfSubtitle: {
     ...typography.bodySmall,
-    color: colors.ink2,
+    color: colors.ink3,
+    fontSize: 11,
     marginTop: 2,
   },
   section: {

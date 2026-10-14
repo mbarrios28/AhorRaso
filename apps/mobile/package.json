@@ -40,7 +40,7 @@
     "test": "jest",
     "test:watch": "jest --watch",
     "typecheck": "tsc --noEmit",
-    "lint": "expo lint"
+    "lint": "eslint ."
   },
   "private": true
 }

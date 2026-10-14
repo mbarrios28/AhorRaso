@@ -92,7 +92,12 @@ export default function HistoryTab() {
             <View style={styles.listCard}>
               {items.map((tx) => {
                 const cat = tx.category;
+                const isIncome = tx.type === 'income';
                 const formatted = (tx.amountCents / 100).toFixed(2);
+                const metaText = isIncome
+                  ? `${tx.source || 'Ingreso'}${tx.note ? ` · ${tx.note}` : ''} · ${tx.occurredOn}`
+                  : `${tx.note || (tx.paymentMethod === 'cash' ? 'Efectivo' : 'Yape / Plin')} · ${tx.occurredOn}`;
+
                 return (
                   <Pressable
                     key={tx.id}
@@ -103,20 +108,27 @@ export default function HistoryTab() {
                   >
                     <View style={[styles.iconBox, { borderColor: colors.line }]}>
                       <Icon
-                        name={cat?.icon || 'Tag'}
+                        name={cat?.icon || (isIncome ? 'Coins' : 'Tag')}
                         size={18}
-                        color={cat?.color || colors.primary}
+                        color={cat?.color || (isIncome ? colors.secondary : colors.primary)}
                       />
                     </View>
                     <View style={styles.rowInfo}>
                       <Text style={styles.rowTitle} numberOfLines={1}>
-                        {cat?.name || 'Transacción'}
+                        {cat?.name || (isIncome ? 'Ingreso' : 'Transacción')}
                       </Text>
                       <Text style={styles.rowSub} numberOfLines={1}>
-                        {tx.note || (tx.paymentMethod === 'cash' ? 'Efectivo' : 'Yape / Plin')} · {tx.occurredOn}
+                        {metaText}
                       </Text>
                     </View>
-                    <Text style={styles.rowAmount}>- S/ {formatted}</Text>
+                    <Text
+                      style={[
+                        styles.rowAmount,
+                        isIncome && { color: colors.secondary },
+                      ]}
+                    >
+                      {isIncome ? '+ ' : '- '}S/ {formatted}
+                    </Text>
                     <Icon name="Pencil" size={13} color={colors.ink3} />
                   </Pressable>
                 );
