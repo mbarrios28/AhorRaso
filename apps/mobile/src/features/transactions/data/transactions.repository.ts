@@ -1,11 +1,12 @@
 import * as Crypto from 'expo-crypto';
-import { eq, and, isNull, desc } from 'drizzle-orm';
+import { eq, and, isNull, desc, asc, gte, lte, lt, gt, or, sql, SQL } from 'drizzle-orm';
 import {
   db,
   transactions,
   merchants,
   profile,
   Transaction,
+  Merchant,
   enqueueOutbox,
   centsToPostgresAmount,
 } from '@/core/db';
@@ -16,6 +17,102 @@ import {
   CreateIncomeInput,
   createIncomeSchema,
 } from '../domain/types';
+import {
+  DEFAULT_HISTORY_PAGE_SIZE,
+  EMPTY_HISTORY_PAGE,
+  HistoryFilters,
+  HistoryItem,
+  HistoryOrder,
+  HistoryPage,
+  HistoryQueryOptions,
+  HistoryTotals,
+  NormalizedHistoryFilters,
+  decodeHistoryCursor,
+  encodeHistoryCursor,
+  historyFiltersSchema,
+  normalizeHistoryLimit,
+  normalizeHistorySearchTerm,
+  toHistoryFilterError,
+} from '../domain/history';
+
+/**
+ * Construye la condición keyset equivalente a "viene después del cursor" para
+ * el orden cronológico solicitado. La tupla (occurred_on, created_at, id)
+ * replica exactamente el criterio de orden, por lo que la paginación es estable
+ * aunque se inserten movimientos nuevos entre páginas (a diferencia de OFFSET).
+ */
+function buildHistoryKeysetCondition(
+  order: HistoryOrder,
+  cursor: { occurredOn: string; createdAt: string; id: string }
+): SQL {
+  const isAsc = order === 'date_asc';
+  const sameDate = eq(transactions.occurredOn, cursor.occurredOn);
+  const sameCreated = eq(transactions.createdAt, cursor.createdAt);
+
+  if (isAsc) {
+    return or(
+      gt(transactions.occurredOn, cursor.occurredOn),
+      and(sameDate, gt(transactions.createdAt, cursor.createdAt)),
+      and(sameDate, sameCreated, gt(transactions.id, cursor.id))
+    ) as SQL;
+  }
+
+  return or(
+    lt(transactions.occurredOn, cursor.occurredOn),
+    and(sameDate, lt(transactions.createdAt, cursor.createdAt)),
+    and(sameDate, sameCreated, lt(transactions.id, cursor.id))
+  ) as SQL;
+}
+
+/**
+ * Condición SQL para filtrar por nombre de establecimiento. Se resuelve con una
+ * subconsulta (no un JOIN) para no duplicar filas ni complicar las sumas
+ * agregadas del historial.
+ */
+function buildMerchantNameCondition(userId: string, term: string): SQL {
+  const pattern = `%${term}%`;
+  return sql`${transactions.merchantId} IN (
+    SELECT ${merchants.id} FROM ${merchants}
+    WHERE ${merchants.userId} = ${userId}
+      AND ${merchants.deletedAt} IS NULL
+      AND lower(${merchants.name}) LIKE ${pattern}
+  )`;
+}
+
+/**
+ * Búsqueda libre del historial: coincide con la nota, la fuente del ingreso o
+ * el nombre del establecimiento (búsqueda "por comercio" de RF-009).
+ */
+function buildHistoryTextCondition(userId: string, term: string): SQL {
+  const pattern = `%${term}%`;
+  return sql`(
+    lower(coalesce(${transactions.note}, '')) LIKE ${pattern}
+    OR lower(coalesce(${transactions.source}, '')) LIKE ${pattern}
+    OR ${buildMerchantNameCondition(userId, term)}
+  )`;
+}
+
+/** Enriquece las filas de movimientos con su categoría y establecimiento. */
+function enrichHistoryItems(userId: string, rows: Transaction[]): HistoryItem[] {
+  if (rows.length === 0) return [];
+
+  // Catálogos pequeños y por usuario: se resuelven en memoria para evitar N+1.
+  const categoryMap = new Map(
+    categoriesRepository.getByUser(userId).map((category) => [category.id, category])
+  );
+  const merchantRows = db
+    .select()
+    .from(merchants)
+    .where(eq(merchants.userId, userId))
+    .all();
+  const merchantMap = new Map(merchantRows.map((merchant) => [merchant.id, merchant]));
+
+  return rows.map((row) => ({
+    ...row,
+    category: categoryMap.get(row.categoryId) ?? null,
+    merchant: row.merchantId ? merchantMap.get(row.merchantId) ?? null : null,
+  }));
+}
 
 export const transactionsRepository = {
   /**
@@ -269,6 +366,127 @@ export const transactionsRepository = {
       )
       .orderBy(desc(transactions.occurredOn), desc(transactions.createdAt))
       .limit(limit)
+      .all();
+  },
+
+  /**
+   * Consulta el historial de movimientos con filtros dinámicos combinables y
+   * paginación keyset (RF-009 / HU-05).
+   *
+   * - Listado estrictamente cronológico: `occurred_on`, `created_at` e `id`
+   *   (desempate estable) en el orden solicitado.
+   * - Filtros aditivos (AND): rango de fechas, categoría, tipo, rango de monto,
+   *   establecimiento exacto o por nombre y texto libre (nota/fuente/comercio).
+   * - Solo movimientos activos (`deleted_at IS NULL`) del usuario autenticado
+   *   (aislamiento RNF-005).
+   * - `total` y `totals` describen el conjunto filtrado completo, no la página.
+   *
+   * Lanza `HistoryQueryError` ('INVALID_FILTER' | 'INVALID_CURSOR') ante
+   * parámetros inválidos, y la UI traduce el código a un mensaje legible.
+   */
+  searchHistory(
+    userId: string,
+    filters: HistoryFilters = {},
+    options: HistoryQueryOptions = {}
+  ): HistoryPage {
+    // 1. Validar el contrato de filtros (fechas y rangos de monto)
+    let parsed: NormalizedHistoryFilters;
+    try {
+      parsed = historyFiltersSchema.parse(filters);
+    } catch (error) {
+      throw toHistoryFilterError(error);
+    }
+
+    // 2. Resolver paginación (cursor opaco + tope de página)
+    const limit = normalizeHistoryLimit(options.limit ?? DEFAULT_HISTORY_PAGE_SIZE);
+    const cursor = options.cursor ? decodeHistoryCursor(options.cursor) : null;
+
+    // 3. Componer las condiciones dinámicas
+    const conditions: SQL[] = [
+      eq(transactions.userId, userId),
+      isNull(transactions.deletedAt),
+    ];
+
+    if (parsed.type) conditions.push(eq(transactions.type, parsed.type));
+    if (parsed.from) conditions.push(gte(transactions.occurredOn, parsed.from));
+    if (parsed.to) conditions.push(lte(transactions.occurredOn, parsed.to));
+    if (parsed.categoryId) conditions.push(eq(transactions.categoryId, parsed.categoryId));
+    if (parsed.merchantId) conditions.push(eq(transactions.merchantId, parsed.merchantId));
+    if (parsed.minAmountCents !== undefined) {
+      conditions.push(gte(transactions.amountCents, parsed.minAmountCents));
+    }
+    if (parsed.maxAmountCents !== undefined) {
+      conditions.push(lte(transactions.amountCents, parsed.maxAmountCents));
+    }
+
+    const merchantTerm = normalizeHistorySearchTerm(parsed.merchantQuery);
+    if (merchantTerm) conditions.push(buildMerchantNameCondition(userId, merchantTerm));
+
+    const searchTerm = normalizeHistorySearchTerm(parsed.search);
+    if (searchTerm) conditions.push(buildHistoryTextCondition(userId, searchTerm));
+
+    // 4. Agregados del conjunto filtrado completo (total y saldos)
+    const aggregate = db
+      .select({
+        total: sql<number>`count(*)`,
+        incomeCents: sql<number>`coalesce(sum(case when ${transactions.type} = 'income' then ${transactions.amountCents} else 0 end), 0)`,
+        expenseCents: sql<number>`coalesce(sum(case when ${transactions.type} = 'expense' then ${transactions.amountCents} else 0 end), 0)`,
+      })
+      .from(transactions)
+      .where(and(...conditions))
+      .get();
+
+    const totals: HistoryTotals = {
+      incomeCents: aggregate?.incomeCents ?? 0,
+      expenseCents: aggregate?.expenseCents ?? 0,
+      netCents: (aggregate?.incomeCents ?? 0) - (aggregate?.expenseCents ?? 0),
+    };
+    const total = aggregate?.total ?? 0;
+
+    if (total === 0) {
+      return { ...EMPTY_HISTORY_PAGE, items: [], totals };
+    }
+
+    // 5. Página: se pide un registro extra para saber si hay más sin COUNT extra
+    const pageConditions = [...conditions];
+    if (cursor) pageConditions.push(buildHistoryKeysetCondition(parsed.order, cursor));
+
+    const orderBy =
+      parsed.order === 'date_asc'
+        ? [asc(transactions.occurredOn), asc(transactions.createdAt), asc(transactions.id)]
+        : [desc(transactions.occurredOn), desc(transactions.createdAt), desc(transactions.id)];
+
+    const rows = db
+      .select()
+      .from(transactions)
+      .where(and(...pageConditions))
+      .orderBy(...orderBy)
+      .limit(limit + 1)
+      .all();
+
+    const hasMore = rows.length > limit;
+    const pageRows = hasMore ? rows.slice(0, limit) : rows;
+    const lastRow = pageRows[pageRows.length - 1];
+
+    return {
+      items: enrichHistoryItems(userId, pageRows),
+      nextCursor: hasMore && lastRow ? encodeHistoryCursor(lastRow) : null,
+      hasMore,
+      total,
+      totals,
+    };
+  },
+
+  /**
+   * Establecimientos activos del usuario, ordenados alfabéticamente. Alimenta
+   * los chips del filtro "Establecimiento" del historial (Escenario 1 de HU-05).
+   */
+  getMerchantOptions(userId: string): Merchant[] {
+    return db
+      .select()
+      .from(merchants)
+      .where(and(eq(merchants.userId, userId), isNull(merchants.deletedAt)))
+      .orderBy(asc(merchants.name))
       .all();
   },
 
