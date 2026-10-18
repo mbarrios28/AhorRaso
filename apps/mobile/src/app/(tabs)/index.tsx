@@ -4,59 +4,42 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useFocusEffect } from 'expo-router';
 import { colors, spacing, radius, typography } from '@/core/theme';
 import { Icon } from '@/core/ui';
-import { db, profile, transactions, categories, Profile, Transaction, Category } from '@/core/db';
+import { db, profile, Profile } from '@/core/db';
 import { DEV_USER_ID } from '@/core/dev/constants';
-import { eq, desc } from 'drizzle-orm';
-
-interface TransactionWithCategory extends Transaction {
-  category?: Category;
-}
+import { eq } from 'drizzle-orm';
+import { dashboardRepository, DashboardSummary } from '@/features/dashboard';
 
 export default function DashboardScreen() {
   const [userProfile, setUserProfile] = useState<Profile | null>(null);
-  const [recentExpenses, setRecentExpenses] = useState<TransactionWithCategory[]>([]);
+  const [summary, setSummary] = useState<DashboardSummary | null>(null);
 
-  // useFocusEffect se ejecuta cada vez que el usuario vuelve a esta pantalla (ej. tras guardar un gasto)
+  // useFocusEffect se ejecuta cada vez que el usuario vuelve a la pantalla
+  // Garantiza RNF-003: carga síncrona inmediata desde SQLite local en < 50 ms.
   useFocusEffect(
     useCallback(() => {
       try {
-        // 1. Cargar saldo actualizado
+        // 1. Cargar perfil del usuario
         const p = db.select().from(profile).where(eq(profile.id, DEV_USER_ID)).get();
         if (p) setUserProfile(p);
 
-        // 2. Cargar transacciones recientes con su categoría
-        const txList = db
-          .select()
-          .from(transactions)
-          .where(eq(transactions.userId, DEV_USER_ID))
-          .orderBy(desc(transactions.createdAt))
-          .limit(10)
-          .all();
-
-        const allCategories = db.select().from(categories).where(eq(categories.userId, DEV_USER_ID)).all();
-        const catMap = new Map(allCategories.map((c) => [c.id, c]));
-
-        const enriched: TransactionWithCategory[] = txList.map((tx) => ({
-          ...tx,
-          category: catMap.get(tx.categoryId),
-        }));
-
-        setRecentExpenses(enriched);
+        // 2. Obtener resumen financiero completo (RF-008 / HU-04)
+        const dashData = dashboardRepository.getDashboardSummary(DEV_USER_ID);
+        setSummary(dashData);
       } catch (e) {
         console.error('Error al actualizar datos del dashboard:', e);
       }
     }, [])
   );
 
-  const balance = userProfile ? (userProfile.initialBalanceCents / 100).toFixed(2) : '0.00';
+  const monthLabel = summary ? summary.monthName.slice(0, 3).toUpperCase() : 'MES';
 
   return (
     <SafeAreaView style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
-        {/* Header Superior */}
+        {/* 1. Header Superior */}
         <View style={styles.header}>
           <View>
-            <Text style={styles.greeting}>Hola, {userProfile?.displayName || 'Estudiante'}</Text>
+            <Text style={styles.greeting}>Hola, {userProfile?.displayName || 'Estudiante UNSA'}</Text>
             <Text style={styles.campus}>UNSA · Arequipa</Text>
           </View>
           <View style={styles.headerAction}>
@@ -65,18 +48,24 @@ export default function DashboardScreen() {
           </View>
         </View>
 
-        {/* Card Principal de Saldo */}
+        {/* 2. Card Principal: Saldo Disponible */}
         <View style={styles.balanceCard}>
-          <Text style={styles.balanceLabel}>SALDO DISPONIBLE</Text>
-          <Text style={styles.balanceAmount}>S/ {balance}</Text>
+          <View style={styles.balanceHeaderRow}>
+            <Text style={styles.balanceLabel}>SALDO DISPONIBLE</Text>
+            <View style={styles.balanceTrendBadge}>
+              <Icon name="TrendingUp" size={12} color={colors.secondary} />
+              <Text style={styles.balanceTrendText}>Activo</Text>
+            </View>
+          </View>
+          <Text style={styles.balanceAmount}>{summary?.formattedBalance || 'S/ 0.00'}</Text>
           <View style={styles.balanceFooter}>
             <Text style={styles.balanceFooterText}>
-              {recentExpenses.length} transacciones registradas localmente
+              Disponible para {summary?.monthName || 'el mes'} · {summary?.totalTransactionsCount || 0} transacciones locales
             </Text>
           </View>
         </View>
 
-        {/* CTAs Rápidos: Registrar Gasto (RF-002) y Registrar Ingreso (RF-001) */}
+        {/* 3. Acciones Rápidas (CTAs del equipo: Nuevo Gasto y Nuevo Ingreso) */}
         <View style={styles.ctaRow}>
           <Pressable
             onPress={() => router.push('/new-expense')}
@@ -116,58 +105,112 @@ export default function DashboardScreen() {
           </Pressable>
         </View>
 
-        {/* Lista de Movimientos Recientes */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeaderRow}>
-            <Text style={styles.sectionTitle}>ÚLTIMOS MOVIMIENTOS</Text>
-            <Text style={styles.sectionHint}>SQLite local</Text>
+        {/* 4. Resumen Mensual: Ingresos vs Gastos del Mes (RF-008 / HU-04) */}
+        <View style={styles.summaryGrid}>
+          {/* Card Ingresos del Mes */}
+          <View style={styles.summaryMetricCard}>
+            <View style={styles.metricHeader}>
+              <Text style={styles.metricLabel}>INGRESOS ({monthLabel})</Text>
+              <Icon name="ArrowUpRight" size={14} color={colors.secondary} />
+            </View>
+            <Text style={[styles.metricAmount, { color: colors.ink }]}>
+              {summary?.formattedMonthlyIncome || 'S/ 0.00'}
+            </Text>
           </View>
 
-          {recentExpenses.length === 0 ? (
+          {/* Card Gastos del Mes */}
+          <View style={styles.summaryMetricCard}>
+            <View style={styles.metricHeader}>
+              <Text style={styles.metricLabel}>GASTOS ({monthLabel})</Text>
+              <Icon name="ArrowDownRight" size={14} color={colors.tertiary} />
+            </View>
+            <Text style={[styles.metricAmount, { color: colors.ink }]}>
+              {summary?.formattedMonthlyExpense || 'S/ 0.00'}
+            </Text>
+          </View>
+        </View>
+
+        {/* 5. Proyección Fin de Mes y Diario Seguro (RF-008 / HU-04) */}
+        <View style={styles.projectionCard}>
+          <View style={styles.projectionHeaderRow}>
+            <Text style={styles.projectionTitle}>PROYECCIÓN FIN DE MES</Text>
+            <View style={styles.safeDailyBadge}>
+              <Text style={styles.safeDailyAmount}>
+                {summary?.projection.formattedSafeDaily || 'S/ 0.00'}
+              </Text>
+              <Text style={styles.safeDailyUnit}> / día</Text>
+            </View>
+          </View>
+
+          <View style={styles.projectionSubRow}>
+            <Text style={styles.projectionDaysText}>
+              Quedan {summary?.projection.daysRemaining ?? 0} días de ciclo
+            </Text>
+            <Text style={styles.projectionLabelBadge}>DIARIO SEGURO</Text>
+          </View>
+
+          {/* Barra de progreso del ciclo mensual */}
+          <View style={styles.cycleProgressTrack}>
+            <View
+              style={[
+                styles.cycleProgressFill,
+                { width: `${summary?.projection.cycleElapsedPercentage || 0}%` },
+              ]}
+            />
+          </View>
+          <Text style={styles.cycleElapsedText}>
+            {summary?.projection.cycleElapsedPercentage || 0}% del ciclo consumido
+          </Text>
+        </View>
+
+        {/* 6. Gastos por Categoría (RF-008 / HU-04) */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeaderRow}>
+            <Text style={styles.sectionTitle}>GASTOS POR CATEGORÍA</Text>
+            <Text style={styles.sectionHint}>{summary?.monthName?.toUpperCase() || 'OCTUBRE'}</Text>
+          </View>
+
+          {!summary || summary.categoryExpenses.length === 0 ? (
             <View style={styles.emptyCard}>
-              <Icon name="Receipt" size={28} color={colors.ink3} />
-              <Text style={styles.emptyText}>Aún no has registrado movimientos hoy.</Text>
+              <Icon name="PieChart" size={26} color={colors.ink3} />
+              <Text style={styles.emptyText}>Aún no has registrado gastos este mes.</Text>
             </View>
           ) : (
-            <View style={styles.transactionsList}>
-              {recentExpenses.map((tx) => {
-                const cat = tx.category;
-                const isIncome = tx.type === 'income';
-                const formattedAmount = (tx.amountCents / 100).toFixed(2);
-                const metaText = isIncome
-                  ? `${tx.source || 'Ingreso'}${tx.note ? ` · ${tx.note}` : ''} · ${tx.occurredOn}`
-                  : `${tx.note || (tx.paymentMethod === 'cash' ? 'Efectivo' : 'Yape / Plin')} · ${tx.occurredOn}`;
-
+            <View style={styles.categoryExpensesCard}>
+              {summary.categoryExpenses.map((cat, index) => {
+                const isLast = index === summary.categoryExpenses.length - 1;
                 return (
-                  <View key={tx.id} style={styles.txRow}>
-                    <View
-                      style={[
-                        styles.txIconBox,
-                        { backgroundColor: colors.surface2, borderColor: colors.line },
-                      ]}
-                    >
-                      <Icon
-                        name={cat?.icon || (isIncome ? 'Coins' : 'Tag')}
-                        size={18}
-                        color={cat?.color || (isIncome ? colors.secondary : colors.primary)}
+                  <View
+                    key={cat.categoryId}
+                    style={[styles.categoryExpenseRow, !isLast && styles.categoryRowBorder]}
+                  >
+                    <View style={styles.catRowHeader}>
+                      <View style={styles.catIconAndTitle}>
+                        <View style={[styles.catIconCircle, { backgroundColor: colors.surface2 }]}>
+                          <Icon name={cat.categoryIcon} size={16} color={cat.categoryColor} />
+                        </View>
+                        <Text style={styles.catNameText} numberOfLines={1}>
+                          {cat.categoryName}
+                        </Text>
+                      </View>
+                      <View style={styles.catAmounts}>
+                        <Text style={styles.catAmountText}>{cat.formattedAmount}</Text>
+                        <Text style={styles.catPercentageText}>{cat.percentage}%</Text>
+                      </View>
+                    </View>
+
+                    {/* Barra de progreso de la categoría */}
+                    <View style={styles.catProgressBarTrack}>
+                      <View
+                        style={[
+                          styles.catProgressBarFill,
+                          {
+                            width: `${Math.min(100, Math.max(3, cat.percentage))}%`,
+                            backgroundColor: cat.categoryColor || colors.secondary,
+                          },
+                        ]}
                       />
                     </View>
-                    <View style={styles.txInfo}>
-                      <Text style={styles.txCategoryName} numberOfLines={1}>
-                        {cat?.name || (isIncome ? 'Ingreso' : 'Gasto')}
-                      </Text>
-                      <Text style={styles.txMeta} numberOfLines={1}>
-                        {metaText}
-                      </Text>
-                    </View>
-                    <Text
-                      style={[
-                        styles.txAmount,
-                        isIncome && { color: colors.secondary },
-                      ]}
-                    >
-                      {isIncome ? '+ ' : '- '}S/ {formattedAmount}
-                    </Text>
                   </View>
                 );
               })}
@@ -175,16 +218,43 @@ export default function DashboardScreen() {
           )}
         </View>
 
-        {/* Nota del Monorepo / Módulo */}
-        <View style={styles.infoSection}>
-          <View style={styles.infoBadge}>
-            <Text style={styles.infoBadgeText}>RF-008 · DASHBOARD FINANCIERO</Text>
+        {/* 7. Metas de Ahorro (Mock desacoplado de RF-007) */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeaderRow}>
+            <Text style={styles.sectionTitle}>METAS DE AHORRO</Text>
+            <Text style={styles.sectionActionText}>GESTIONAR</Text>
           </View>
-          <Text style={styles.infoTitle}>Módulo Compartido</Text>
-          <Text style={styles.infoText}>
-            Esta vista servirá como contenedor para las métricas de consumo y presupuestos
-            de Dev A y Dev B.
-          </Text>
+
+          <View style={styles.goalCard}>
+            <View style={styles.goalHeaderRow}>
+              <View style={styles.goalInfoLeft}>
+                <View style={styles.goalIconCircle}>
+                  <Icon name="Laptop" size={18} color={colors.secondary} />
+                </View>
+                <View>
+                  <Text style={styles.goalTitle}>{summary?.activeGoal.title || 'Laptop para ciclo'}</Text>
+                  <Text style={styles.goalDeadline}>{summary?.activeGoal.deadlineText || 'Meta para marzo 2027'}</Text>
+                </View>
+              </View>
+              <View style={styles.goalAmountsRight}>
+                <Text style={styles.goalAmountText}>
+                  {summary?.activeGoal.formattedCurrent || 'S/ 120.00'}{' '}
+                  <Text style={styles.goalTargetText}>/ {summary?.activeGoal.formattedTarget || 'S/ 500.00'}</Text>
+                </Text>
+                <Text style={styles.goalPercentageBadge}>{summary?.activeGoal.percentage || 24}%</Text>
+              </View>
+            </View>
+
+            {/* Barra de progreso de la meta */}
+            <View style={styles.goalProgressTrack}>
+              <View
+                style={[
+                  styles.goalProgressFill,
+                  { width: `${summary?.activeGoal.percentage || 24}%` },
+                ]}
+              />
+            </View>
+          </View>
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -206,7 +276,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingTop: spacing.xs,
-    marginBottom: spacing.xs,
+    marginBottom: spacing.xxs,
   },
   greeting: {
     ...typography.titleMedium,
@@ -245,10 +315,29 @@ const styles = StyleSheet.create({
     borderRadius: radius.lg,
     padding: spacing.base,
   },
+  balanceHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing.xs,
+  },
   balanceLabel: {
     ...typography.labelSmall,
     color: colors.ink3,
-    marginBottom: spacing.xs,
+  },
+  balanceTrendBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: colors.surface2,
+    paddingHorizontal: spacing.xs,
+    paddingVertical: 2,
+    borderRadius: radius.full,
+  },
+  balanceTrendText: {
+    ...typography.monoSmall,
+    fontSize: 10,
+    color: colors.secondary,
   },
   balanceAmount: {
     ...typography.amountLarge,
@@ -314,6 +403,102 @@ const styles = StyleSheet.create({
     fontSize: 11,
     marginTop: 2,
   },
+  summaryGrid: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  summaryMetricCard: {
+    flex: 1,
+    backgroundColor: colors.surface,
+    borderColor: colors.line,
+    borderWidth: 1,
+    borderRadius: radius.md,
+    padding: spacing.md,
+  },
+  metricHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing.xs,
+  },
+  metricLabel: {
+    ...typography.labelSmall,
+    fontSize: 10,
+    color: colors.ink3,
+  },
+  metricAmount: {
+    ...typography.monoMedium,
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  projectionCard: {
+    backgroundColor: colors.surface,
+    borderColor: colors.line,
+    borderWidth: 1,
+    borderRadius: radius.md,
+    padding: spacing.base,
+    gap: spacing.xs,
+  },
+  projectionHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  projectionTitle: {
+    ...typography.labelSmall,
+    color: colors.ink3,
+  },
+  safeDailyBadge: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+  },
+  safeDailyAmount: {
+    ...typography.monoMedium,
+    color: colors.secondary,
+    fontWeight: '700',
+    fontSize: 14,
+  },
+  safeDailyUnit: {
+    ...typography.monoSmall,
+    fontSize: 11,
+    color: colors.ink3,
+  },
+  projectionSubRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 2,
+  },
+  projectionDaysText: {
+    ...typography.bodySmall,
+    color: colors.ink2,
+  },
+  projectionLabelBadge: {
+    ...typography.monoSmall,
+    fontSize: 9,
+    letterSpacing: 0.8,
+    color: colors.ink3,
+    textTransform: 'uppercase',
+  },
+  cycleProgressTrack: {
+    width: '100%',
+    height: 5,
+    backgroundColor: colors.surface2,
+    borderRadius: radius.full,
+    overflow: 'hidden',
+    marginTop: spacing.xs,
+  },
+  cycleProgressFill: {
+    height: '100%',
+    backgroundColor: colors.secondary,
+    borderRadius: radius.full,
+  },
+  cycleElapsedText: {
+    ...typography.monoSmall,
+    fontSize: 10,
+    color: colors.ink3,
+    marginTop: 2,
+  },
   section: {
     gap: spacing.xs,
   },
@@ -332,6 +517,12 @@ const styles = StyleSheet.create({
     fontSize: 10,
     color: colors.ink3,
   },
+  sectionActionText: {
+    ...typography.monoSmall,
+    fontSize: 10,
+    color: colors.secondary,
+    fontWeight: '600',
+  },
   emptyCard: {
     backgroundColor: colors.surface,
     borderColor: colors.line,
@@ -346,78 +537,143 @@ const styles = StyleSheet.create({
     ...typography.bodySmall,
     color: colors.ink3,
   },
-  transactionsList: {
+  categoryExpensesCard: {
     backgroundColor: colors.surface,
     borderColor: colors.line,
     borderWidth: 1,
     borderRadius: radius.md,
-    overflow: 'hidden',
-  },
-  txRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    padding: spacing.base,
     gap: spacing.md,
-    paddingHorizontal: spacing.base,
-    paddingVertical: spacing.md,
+  },
+  categoryExpenseRow: {
+    gap: spacing.xs,
+  },
+  categoryRowBorder: {
+    paddingBottom: spacing.sm,
     borderBottomWidth: 1,
     borderBottomColor: colors.line,
   },
-  txIconBox: {
-    width: 36,
-    height: 36,
+  catRowHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  catIconAndTitle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    flex: 1,
+  },
+  catIconCircle: {
+    width: 28,
+    height: 28,
     borderRadius: radius.sm,
-    borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  txInfo: {
-    flex: 1,
-  },
-  txCategoryName: {
+  catNameText: {
     ...typography.bodyMedium,
     color: colors.ink,
-    fontWeight: '600',
+    fontWeight: '500',
+    flex: 1,
   },
-  txMeta: {
-    ...typography.bodySmall,
-    color: colors.ink3,
-    fontSize: 11,
-    marginTop: 2,
+  catAmounts: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
   },
-  txAmount: {
+  catAmountText: {
     ...typography.monoMedium,
+    fontSize: 13,
     color: colors.ink,
-    fontSize: 14,
     fontWeight: '600',
   },
-  infoSection: {
+  catPercentageText: {
+    ...typography.monoSmall,
+    fontSize: 11,
+    color: colors.ink3,
+    width: 32,
+    textAlign: 'right',
+  },
+  catProgressBarTrack: {
+    width: '100%',
+    height: 4,
+    backgroundColor: colors.surface2,
+    borderRadius: radius.full,
+    overflow: 'hidden',
+  },
+  catProgressBarFill: {
+    height: '100%',
+    borderRadius: radius.full,
+  },
+  goalCard: {
     backgroundColor: colors.surface,
     borderColor: colors.line,
     borderWidth: 1,
-    borderRadius: radius.lg,
+    borderRadius: radius.md,
     padding: spacing.base,
-    gap: spacing.xs,
-    marginTop: spacing.sm,
+    gap: spacing.sm,
   },
-  infoBadge: {
-    alignSelf: 'flex-start',
+  goalHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  goalInfoLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    flex: 1,
+  },
+  goalIconCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: radius.sm,
     backgroundColor: colors.surface2,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 2,
-    borderRadius: radius.xs,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  infoBadgeText: {
+  goalTitle: {
+    ...typography.titleSmall,
+    fontSize: 13,
+    color: colors.ink,
+  },
+  goalDeadline: {
     ...typography.monoSmall,
     fontSize: 10,
-    color: colors.primary,
+    color: colors.ink3,
+    marginTop: 2,
   },
-  infoTitle: {
-    ...typography.titleSmall,
-    marginTop: spacing.xs,
+  goalAmountsRight: {
+    alignItems: 'flex-end',
   },
-  infoText: {
-    ...typography.bodySmall,
-    color: colors.ink2,
-    lineHeight: 18,
+  goalAmountText: {
+    ...typography.monoMedium,
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.ink,
+  },
+  goalTargetText: {
+    color: colors.ink3,
+    fontWeight: '400',
+  },
+  goalPercentageBadge: {
+    ...typography.monoSmall,
+    fontSize: 10,
+    color: colors.secondary,
+    fontWeight: '700',
+    marginTop: 2,
+  },
+  goalProgressTrack: {
+    width: '100%',
+    height: 5,
+    backgroundColor: colors.surface2,
+    borderRadius: radius.full,
+    overflow: 'hidden',
+  },
+  goalProgressFill: {
+    height: '100%',
+    backgroundColor: colors.secondary,
+    borderRadius: radius.full,
   },
 });
