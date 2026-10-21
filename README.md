@@ -69,6 +69,13 @@ La plataforma resuelve los problemas más comunes de la gestión financiera manu
 - Reasignación de categoría desde el historial de movimientos (`RF-004`), con validación de tipo (ingreso/gasto) en la capa de datos.
 - Sugerencia automática de iconos contextualizada al entorno universitario peruano (*combi*, *menú*, *fotocopias*, *chelas*, etc.).
 
+### 🧾 Historial de Movimientos con Filtros (`RF-009` / `HU-05`)
+- Listado cronológico unificado de ingresos y gastos, con totales del conjunto filtrado (ingresos, egresos y neto).
+- Filtros combinables: rango de fechas con atajos (*Hoy*, *Últimos 7 días*, *Este mes*, *Mes pasado*), categoría, tipo de movimiento, rango de monto y establecimiento.
+- Búsqueda de texto libre por comercio, nota o fuente del ingreso.
+- Paginación **keyset** por cursor en la capa de datos (páginas estables ante inserciones nuevas) con scroll infinito y botón "Cargar más" en la UI.
+- Validación de filtros en el dominio (formato de fechas y coherencia de rangos) con errores tipados que la UI traduce a mensajes legibles.
+
 ### 📊 Presupuestos Dinámicos y Alertas de Sobregiro
 - Configuración de topes mensuales y semanales por categoría.
 - Alertas proactivas automáticas al alcanzar el 80% y 100% del presupuesto asignado.
@@ -180,7 +187,8 @@ AhorRaso/
 │           │   └── ui/        # Componentes base (Icon de Lucide, Placeholders)
 │           └── features/      # Módulos por dominio de negocio (Feature-First)
 │               ├── categories/# Selector de categoría, creación in-flow y gestión (RF-004/RF-005)
-│               └── transactions/# Repositorio de transacciones, esquemas Zod y UI
+│               └── transactions/# Repositorio de transacciones, esquemas Zod, historial
+│                              # con filtros/paginación keyset (RF-009) y UI de registro
 │       ├── test/               # Infraestructura de pruebas (mocks de Expo/SQLite y helpers)
 │       ├── jest.config.js      # Configuración de Jest (ts-jest + node:sqlite)
 ├── docs/
