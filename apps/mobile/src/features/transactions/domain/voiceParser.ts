@@ -391,10 +391,10 @@ export const DEFAULT_CATEGORY_SEEDS: Array<{
  */
 export function detectPaymentMethod(text: string): PaymentMethod {
   const norm = normalizeText(text);
-  if (/\b(yape|yapee|plin|plinear|transferencia|tarjeta|bcp|interbank|bbva|scotiabank|digital|qr)\b/.test(norm)) {
+  if (/\b(yape|yapee|yapeado|al\s+yape|plin|plinear|plinee|transferencia|tarjeta|debito|credito|bcp|interbank|bbva|scotiabank|digital|qr)\b/.test(norm)) {
     return 'digital';
   }
-  if (/\b(efectivo|cash|en mano|sencillo|monedas|billete)\b/.test(norm)) {
+  if (/\b(efectivo|cash|al\s+contado|contado|en\s+mano|en\s+fisico|sencillo|monedas|billete|billetes)\b/.test(norm)) {
     return 'cash';
   }
   // Smart default: transporte urbano suele ser efectivo
@@ -405,22 +405,349 @@ export function detectPaymentMethod(text: string): PaymentMethod {
 }
 
 /**
- * Extrae el nombre del establecimiento / comercio.
- * Ej: "en el chino", "en tambo", "en la tía veneno", "de don pepe".
+ * Expresiones conversacionales y muletillas de relleno que no aportan valor contable.
  */
-export function extractMerchant(text: string): string | undefined {
-  const clean = text.replace(/\[REPAIR\].*$/, ''); // Prevenir ruido
-  const match = clean.match(/\b(?:en|de)\s+(?:el\s+|la\s+|los\s+|las\s+)?([a-záéíóúñ0-9+]+(?:\s+[a-záéíóúñ0-9+]+)?)\b/i);
-  if (match && match[1]) {
-    const candidate = match[1].trim();
-    // Excluir palabras comunes que no son comercios
-    const excluded = ['taxi', 'combi', 'micro', 'pasaje', 'efectivo', 'yape', 'plin', 'ayer', 'hoy', 'soles', 'lucas'];
-    if (!excluded.includes(candidate.toLowerCase())) {
-      // Capitalizar
-      return candidate.charAt(0).toUpperCase() + candidate.slice(1);
+export const CONVERSATIONAL_STOP_PHRASES = [
+  'el dia de hoy hice una compra de',
+  'el dia de hoy compre',
+  'el dia de hoy gaste',
+  'el dia de hoy pague',
+  'el dia de hoy',
+  'hoy dia hice una compra de',
+  'hoy dia compre',
+  'hoy dia gaste',
+  'hoy dia pague',
+  'hoy dia',
+  'hice una compra de',
+  'hice una compra en',
+  'hice una compra',
+  'hice un gasto de',
+  'hice un gasto en',
+  'hice un gasto',
+  'acabo de comprar',
+  'acabo de gastar',
+  'acabo de pagar',
+  'se me fue en',
+  'me compre un',
+  'me compre una',
+  'me compre',
+  'compre un',
+  'compre una',
+  'compre',
+  'gaste en',
+  'gaste',
+  'pague por',
+  'pague en',
+  'pague',
+  'hace un rato',
+  'hace poco',
+];
+
+/**
+ * Catálogo de comercios, cadenas y locales populares peruanos por defecto.
+ */
+export const POPULAR_PERUVIAN_MERCHANTS: string[] = [
+  'Tambo+',
+  'Tambo',
+  'Oxxo',
+  'Mass',
+  'Metro',
+  'Plaza Vea',
+  'Tottus',
+  'Wong',
+  'Makro',
+  'Vivanda',
+  'Franco',
+  'Inkafarma',
+  'Mifarma',
+  'Bembos',
+  'KFC',
+  'McDonalds',
+  'Burger King',
+  'Pardos Chicken',
+  'Rokys',
+  'Norkys',
+  'China Wok',
+  'Starbucks',
+  'Don Pepe',
+  'Tía Veneno',
+  'Menú UNSA',
+  'Comedor UNSA',
+  'Grifo Primax',
+  'Primax',
+  'Repsol',
+  'Petroperú',
+  'Claro',
+  'Movistar',
+  'Entel',
+  'Bitel',
+];
+
+/**
+ * Palabras que representan productos, categorías, unidades monetarias o conectores
+ * y que NUNCA deben confundirse con un nombre de local o establecimiento.
+ */
+export const NON_MERCHANT_WORDS = new Set([
+  // Comida y bebidas
+  'galleta', 'galletas', 'almuerzo', 'almuerso', 'menu', 'menú', 'comida', 'cena', 'desayuno',
+  'hamburguesa', 'salchipapa', 'broaster', 'chifa', 'chiffa', 'pollo', 'snack', 'pan', 'panes',
+  'cafe', 'jugo', 'gaseosa', 'coca cola', 'agua', 'empanada', 'sanguchito', 'pizza', 'fruta',
+  'chelas', 'cerveza', 'trago', 'canchita',
+  // Transporte
+  'taxi', 'tasi', 'taxii', 'combi', 'micro', 'colectivo', 'pasaje', 'pasajes', 'gasolina', 'carrera',
+  // Educación
+  'fotocopia', 'fotocopias', 'copia', 'copias', 'impresion', 'impresiones', 'cuaderno', 'cuadernos',
+  'lapicero', 'lapiceros', 'libro', 'libros', 'hojas', 'examen', 'matricula',
+  // Servicios y salud
+  'luz', 'agua', 'internet', 'recarga', 'saldo', 'gas', 'pastilla', 'pastillas', 'medicina',
+  'panadol', 'paracetamol', 'jarabe', 'curita',
+  // Monedas y jergas monetarias
+  'sol', 'soles', 'luca', 'lucas', 'china', 'chinas', 'ferro', 'ferros', 'peseta', 'pesetas',
+  'mango', 'mangos', 'palo', 'palos', 'plata', 'dinero', 'sencillo', 'billete', 'moneda', 'monedas',
+  // Métodos de pago
+  'efectivo', 'cash', 'yape', 'plin', 'tarjeta', 'transferencia', 'digital', 'debito', 'credito',
+  // Tiempo y fechas
+  'ayer', 'hoy', 'anoche', 'anteayer', 'antier', 'ahora', 'dia', 'tarde', 'noche', 'mañana',
+  // Números y pronombres
+  'un', 'uno', 'una', 'dos', 'tres', 'cuatro', 'cinco', 'seis', 'siete', 'ocho', 'nueve', 'diez',
+  'once', 'doce', 'trece', 'catorce', 'quince', 'dieciseis', 'diecisiete', 'dieciocho', 'diecinueve',
+  'veinte', 'veinticinco', 'treinta', 'cuarenta', 'cincuenta', 'cien', 'media',
+  // Palabras varias
+  'gasto', 'compra', 'pago', 'algo', 'nada', 'cosa', 'cosas'
+]);
+
+/**
+ * Extrae el nombre del establecimiento / comercio aplicando Named Entity Recognition ligero.
+ * Reconoce:
+ * - Comercios conocidos (Tambo+, Franco, Don Pepe, Menú UNSA, KFC, etc.) por coincidencia difusa.
+ * - Patrones sintácticos peruanos:
+ *   - "donde [Persona/Local]" -> "donde don pepe", "donde la tía veneno", "donde el chino"
+ *   - "en la tienda de ...", "en el grifo ...", "en la botica ..."
+ *   - "compré en ...", "gasté en ...", "hice una compra en ..."
+ */
+export function extractMerchant(
+  text: string,
+  knownPlaces: string[] = []
+): string | undefined {
+  const clean = text.replace(/\[REPAIR\].*$/, '').trim();
+  const norm = normalizeText(clean);
+
+  // 1. Cruce prioritario con catálogo de comercios conocidos del usuario + comercios populares peruanos
+  const allKnown = Array.from(new Set([...knownPlaces, ...POPULAR_PERUVIAN_MERCHANTS]));
+  for (const place of allKnown) {
+    if (!place || place.length < 3) continue;
+    const normPlace = normalizeText(place);
+    const placeRegex = new RegExp(`\\b${normPlace.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
+    if (placeRegex.test(norm)) {
+      return place;
     }
   }
+
+  // 2. Patrones sintácticos de alta fidelidad:
+  // Patrón A: "donde [Persona/Lugar]" -> "donde don pepe", "donde la tía veneno", "donde el chino", "donde doña mary"
+  const dondeMatch = clean.match(
+    /\b(?:donde|dónde)\s+(?:la\s+|el\s+|los\s+|las\s+|don\s+|doña\s+)?([a-záéíóúñ0-9+]+(?:\s+[a-záéíóúñ0-9+]+){0,2})\b/i
+  );
+  if (dondeMatch && dondeMatch[1]) {
+    const cand = dondeMatch[1].trim();
+    const normCand = normalizeText(cand);
+    const firstWord = normCand.split(/\s+/)[0];
+    if (!NON_MERCHANT_WORDS.has(firstWord) && cand.length >= 2) {
+      return cand
+        .split(/\s+/)
+        .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+        .join(' ');
+    }
+  }
+
+  // Patrón B: Expresiones explícitas de negocio:
+  // "en la tienda de don pepe", "en el grifo primax", "en la botica san pablo", "en la bodega doña mary"
+  const storeTypeMatch = clean.match(
+    /\b(?:en|de)\s+(?:el\s+puesto\s+de\s+|la\s+tienda\s+de\s+|la\s+bodega\s+de\s+|el\s+local\s+de\s+|el\s+grifo\s+|la\s+botica\s+|la\s+farmacia\s+|el\s+restaurante\s+|la\s+cafeteria\s+|la\s+panaderia\s+|la\s+libreria\s+|el\s+comedor\s+de\s+)([a-záéíóúñ0-9+]+(?:\s+[a-záéíóúñ0-9+]+)?)\b/i
+  );
+  if (storeTypeMatch && storeTypeMatch[1]) {
+    const cand = storeTypeMatch[1].trim();
+    const normCand = normalizeText(cand);
+    const firstWord = normCand.split(/\s+/)[0];
+    if (!NON_MERCHANT_WORDS.has(firstWord) && cand.length >= 2) {
+      return cand
+        .split(/\s+/)
+        .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+        .join(' ');
+    }
+  }
+
+  // Patrón C: Verbo de compra + en + local:
+  // "compré en tambo", "hice una compra en don pepe", "gasté en el chino"
+  const verbEnMatch = clean.match(
+    /\b(?:compre|compré|gaste|gasté|pague|pagué|hice\s+una\s+compra|hice\s+un\s+gasto|consumi|consumí)\s+en\s+(?:el\s+|la\s+|los\s+|las\s+|don\s+|doña\s+)?([a-záéíóúñ0-9+]+(?:\s+[a-záéíóúñ0-9+]+)?)\b/i
+  );
+  if (verbEnMatch && verbEnMatch[1]) {
+    const cand = verbEnMatch[1].trim();
+    const normCand = normalizeText(cand);
+    const firstWord = normCand.split(/\s+/)[0];
+    if (!NON_MERCHANT_WORDS.has(firstWord) && cand.length >= 2) {
+      return cand
+        .split(/\s+/)
+        .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+        .join(' ');
+    }
+  }
+
+  // Patrón D: Locaciones y establecimientos genéricos: "en el chino", "en la unsa", "en la facultad", "en la bodega"
+  const genericPlaceMatch = clean.match(
+    /\b(?:en)\s+(?:el\s+|la\s+)?(chino|mercado|facultad|unsa|bodega|bazar|supermercado|minimarket)\b/i
+  );
+  if (genericPlaceMatch && genericPlaceMatch[1]) {
+    const cand = genericPlaceMatch[1].trim();
+    return cand.charAt(0).toUpperCase() + cand.slice(1).toLowerCase();
+  }
+
+  // Patrón E: "en [Local]" antes del método de pago o conector:
+  // Ej: "15 soles en almuerzo en Tambo por yape", "en Don Mario por plin", "en El Paisita al contado"
+  const enBeforePaymentMatch = clean.match(
+    /\ben\s+(?:el\s+|la\s+|los\s+|las\s+)?((?:don\s+|doña\s+)?[a-záéíóúñ0-9+]+(?:\s+[a-záéíóúñ0-9+]+)?)\s+(?:por\s+(?:yape|plin|tarjeta|efectivo)|al\s+contado|en\s+efectivo|en\s+digital)\b/i
+  );
+  if (enBeforePaymentMatch && enBeforePaymentMatch[1]) {
+    const cand = enBeforePaymentMatch[1].trim();
+    const normCand = normalizeText(cand);
+    const firstWord = normCand.split(/\s+/)[0];
+    if (!NON_MERCHANT_WORDS.has(firstWord) && cand.length >= 2) {
+      return cand
+        .split(/\s+/)
+        .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+        .join(' ');
+    }
+  }
+
+  // Patrón F: Doble "en": "... en [Concepto] en [Local]"
+  // Ej: "15 soles en almuerzo en El Paisita", "en Don Mario"
+  const doubleEnMatch = clean.match(
+    /\ben\s+[a-záéíóúñ0-9+]+\s+en\s+(?:el\s+|la\s+|los\s+|las\s+)?((?:don\s+|doña\s+)?[a-záéíóúñ0-9+]+(?:\s+[a-záéíóúñ0-9+]+)?)\b/i
+  );
+  if (doubleEnMatch && doubleEnMatch[1]) {
+    const cand = doubleEnMatch[1].trim();
+    const normCand = normalizeText(cand);
+    const firstWord = normCand.split(/\s+/)[0];
+    if (!NON_MERCHANT_WORDS.has(firstWord) && cand.length >= 2) {
+      return cand
+        .split(/\s+/)
+        .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+        .join(' ');
+    }
+  }
+
+  // 3. Fuzzy match de respaldo contra comercios conocidos
+  const words = norm.split(/\s+/);
+  for (const w of words) {
+    if (w.length >= 4 && !NON_MERCHANT_WORDS.has(w)) {
+      for (const place of allKnown) {
+        const normPlace = normalizeText(place);
+        if (stringSimilarity(w, normPlace) >= 0.82) {
+          return place;
+        }
+      }
+    }
+  }
+
   return undefined;
+}
+
+/**
+ * Extrae la fecha relativa mencionada en la locución (hoy, ayer, anoche, anteayer).
+ */
+export function extractRelativeDate(text: string, defaultDate?: string): string {
+  const norm = normalizeText(text);
+  const now = new Date();
+
+  if (/\b(anteayer|antier)\b/i.test(norm)) {
+    now.setDate(now.getDate() - 2);
+    return now.toISOString().split('T')[0];
+  }
+  if (/\b(ayer|anoche|el\s+dia\s+de\s+ayer|ayer\s+en\s+la\s+noche)\b/i.test(norm)) {
+    now.setDate(now.getDate() - 1);
+    return now.toISOString().split('T')[0];
+  }
+  if (/\b(hoy|hoy\s+dia|el\s+dia\s+de\s+hoy)\b/i.test(norm)) {
+    return now.toISOString().split('T')[0];
+  }
+
+  return defaultDate || now.toISOString().split('T')[0];
+}
+
+/**
+ * Limpia la nota del gasto eliminando el monto, comercio, método de pago y muletillas conversacionales.
+ */
+export function cleanExpenseNote(
+  segment: string,
+  rawAmountMatch?: string,
+  merchantName?: string,
+  categoryName?: string
+): string {
+  let cleaned = segment.replace(/\[REPAIR\].*$/, '');
+
+  // 1. Quitar el monto detectado
+  if (rawAmountMatch) {
+    cleaned = cleaned.replace(
+      new RegExp(rawAmountMatch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'),
+      ' '
+    );
+  }
+
+  // 2. Quitar expresiones de comercio ("en don pepe", "donde la tía veneno", "en tambo")
+  if (merchantName) {
+    const merchantNorm = normalizeText(merchantName);
+    const merchantRx = new RegExp(
+      `\\b(?:en|de|donde|dónde)\\s+(?:el\\s+|la\\s+|los\\s+|las\\s+|don\\s+|doña\\s+)?${merchantNorm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`,
+      'gi'
+    );
+    cleaned = cleaned.replace(merchantRx, ' ');
+    cleaned = cleaned.replace(
+      new RegExp(`\\b${merchantNorm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'gi'),
+      ' '
+    );
+  }
+
+  // 3. Quitar método de pago ("por yape", "al yape", "en efectivo", "al contado", "con plin", "por transferencia")
+  cleaned = cleaned.replace(
+    /\b(?:pagado\s+en|pagado\s+con|al|por|con|en)?\s*(?:yape|yapeado|plin|efectivo|cash|contado|tarjeta|debito|credito|transferencia)\b/gi,
+    ' '
+  );
+
+  // 4. Quitar expresiones temporales tolerando tildes ("el día de hoy", "ayer", "anoche", "hoy día", "hace un rato")
+  cleaned = cleaned.replace(
+    /\b(?:el\s+d[ií]a\s+de\s+hoy|hoy\s+d[ií]a|el\s+d[ií]a\s+de\s+ayer|ayer\s+en\s+la\s+noche|anteayer|anoche|ayer|hoy)\b/gi,
+    ' '
+  );
+
+  // 5. Quitar frases conversacionales de relleno con soporte insensible a tildes
+  for (const phrase of CONVERSATIONAL_STOP_PHRASES) {
+    const pattern = phrase
+      .replace(/a/g, '[aá]')
+      .replace(/e/g, '[eé]')
+      .replace(/i/g, '[ií]')
+      .replace(/o/g, '[oó]')
+      .replace(/u/g, '[uú]');
+    const rx = new RegExp(`\\b${pattern}\\b`, 'gi');
+    cleaned = cleaned.replace(rx, ' ');
+  }
+
+  // 6. Quitar conectores sueltos y preposiciones huérfanas al inicio o fin
+  cleaned = cleaned
+    .replace(/\b(?:soles?|sol|pesos?|lucas?|ferros?|chinas?|por|de|en|y|ademas|además|tambien|también|con)\b/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  // Si quedó vacío o demasiado corto (ej. el usuario solo dijo "15 soles en tambo"), dar un fallback legible
+  if (!cleaned || cleaned.length < 2) {
+    if (merchantName) {
+      return `Compra en ${merchantName}`;
+    }
+    return categoryName || 'Gasto';
+  }
+
+  // Capitalizar primera letra
+  return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
 }
 
 /**
@@ -592,8 +919,56 @@ export function extractMonetaryAmounts(text: string): Array<{ amountCents: numbe
     }
   }
 
-  // "quince soles", "diez soles", etc.
-  const wordsSolesRegex = /\b(un|uno|una|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|once|doce|trece|catorce|quince|dieciseis|diecisiete|dieciocho|diecinueve|veinte|veintiuno|veintidos|veintitres|veinticuatro|veinticinco|veintiseis|veintisiete|veintiocho|veintinueve|treinta|cuarenta|cincuenta|cien)\s+soles?\b/gi;
+  // "medio sol" = 0.50 soles
+  const medioSolRegex = /\bmedio\s+sol\b/gi;
+  for (const m of Array.from(norm.matchAll(medioSolRegex))) {
+    if (m.index !== undefined) {
+      candidates.push({
+        amountCents: 50,
+        rawMatch: m[0],
+        startIndex: m.index,
+        endIndex: m.index + m[0].length,
+        priority: 9,
+      });
+    }
+  }
+
+  // "sol y medio", "un sol y medio", "X soles y medio", "X sol y medio"
+  const solYMedioRegex = /\b(\d+|un|uno|una|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|quince|veinte|treinta|cuarenta|cincuenta)?\s*(?:soles?|sol)\s+y\s+medio\b/gi;
+  for (const m of Array.from(norm.matchAll(solYMedioRegex))) {
+    if (m.index !== undefined) {
+      const base = m[1] ? (parseNumberToken(m[1]) ?? 1) : 1;
+      candidates.push({
+        amountCents: Math.round((base + 0.5) * 100),
+        rawMatch: m[0],
+        startIndex: m.index,
+        endIndex: m.index + m[0].length,
+        priority: 9,
+      });
+    }
+  }
+
+  // "un sol cincuenta", "dos soles cincuenta", "X soles/sol con Y"
+  const solWithCentsRegex = /\b(\d+|un|uno|una|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|quince|veinte|veinticinco|treinta|cuarenta|cincuenta)\s+(?:soles?|sol)\s+(?:con\s+)?(\d+|cincuenta|veinte|diez|ochenta|noventa|treinta|cuarenta)\b/gi;
+  for (const m of Array.from(norm.matchAll(solWithCentsRegex))) {
+    if (m.index !== undefined) {
+      const p1 = parseNumberToken(m[1]) ?? 0;
+      const p2 = parseNumberToken(m[2]) ?? 0;
+      const val = p1 + p2 / 100;
+      if (val > 0) {
+        candidates.push({
+          amountCents: Math.round(val * 100),
+          rawMatch: m[0],
+          startIndex: m.index,
+          endIndex: m.index + m[0].length,
+          priority: 8,
+        });
+      }
+    }
+  }
+
+  // "un sol", "dos soles", "quince soles", "diez soles", etc.
+  const wordsSolesRegex = /\b(un|uno|una|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|once|doce|trece|catorce|quince|dieciseis|diecisiete|dieciocho|diecinueve|veinte|veintiuno|veintidos|veintitres|veinticuatro|veinticinco|veintiseis|veintisiete|veintiocho|veintinueve|treinta|cuarenta|cincuenta|cien)\s+(?:soles?|sol)\b/gi;
   for (const m of Array.from(norm.matchAll(wordsSolesRegex))) {
     if (m.index !== undefined) {
       const val = parseNumberToken(m[1]);
@@ -628,7 +1003,7 @@ export function extractMonetaryAmounts(text: string): Array<{ amountCents: numbe
 
   // 3. Dígitos independientes (e.g. en multi-gasto "menú 15 soles taxi 5 galleta 2 soles")
   // Excluir si va seguido de unidad/artículo plural (e.g. "6 panes")
-  const standaloneDigitsRegex = /\b(\d+(?:\.\d+)?)\b(?!\s+(?:panes|galletas|hamburguesas|cuadernos|lapiceros|unidades|kilos|litros|minutos|horas|dias|soles?|lucas?|pesos?))/gi;
+  const standaloneDigitsRegex = /\b(\d+(?:\.\d+)?)\b(?!\s+(?:panes|galletas|hamburguesas|cuadernos|lapiceros|unidades|kilos|litros|minutos|horas|dias|soles?|sol|lucas?|pesos?))/gi;
   for (const m of Array.from(norm.matchAll(standaloneDigitsRegex))) {
     if (m.index !== undefined) {
       const val = parseFloat(m[1]);
@@ -674,6 +1049,7 @@ export function extractMonetaryAmounts(text: string): Array<{ amountCents: numbe
 export interface ParseVoiceOptions {
   userCategories?: CategoryLookupItem[];
   learnedMatches?: LearnedMatch[];
+  knownPlaces?: string[];
   defaultDate?: string; // YYYY-MM-DD
 }
 
@@ -686,6 +1062,9 @@ export interface ParseVoiceOptions {
  * - Jerga peruana ("lucas", "ferros", "chinas", "con cincuenta").
  * - Distinción de cantidades ("6 panes por 2 soles").
  * - Coincidencia difusa (fuzzy Levenshtein).
+ * - Identificación robusta de comercios y establecimientos peruanos.
+ * - Limpieza inteligente de notas eliminando muletillas y conectores.
+ * - Detección de fechas relativas (hoy, ayer, anoche, anteayer).
  * - Autoaprendizaje adaptativo previo.
  */
 export function parseVoiceTranscript(
@@ -696,15 +1075,15 @@ export function parseVoiceTranscript(
     return [];
   }
 
-  const { userCategories = [], learnedMatches = [], defaultDate } = options;
+  const {
+    userCategories = [],
+    learnedMatches = [],
+    knownPlaces = [],
+    defaultDate,
+  } = options;
 
-  // Fecha por defecto o cálculo de "ayer"
-  const today = new Date();
-  const normTotal = normalizeText(rawTranscript);
-  if (normTotal.includes('ayer')) {
-    today.setDate(today.getDate() - 1);
-  }
-  const occurredOn = defaultDate || today.toISOString().split('T')[0];
+  // Fecha por defecto o inferida de expresiones relativas ("ayer", "anoche", "anteayer", "hoy")
+  const occurredOn = extractRelativeDate(rawTranscript, defaultDate);
 
   // 1. Manejo de auto-corrección / speech repair
   const { activeText, hadRepair } = resolveSpeechRepair(rawTranscript);
@@ -727,10 +1106,14 @@ export function parseVoiceTranscript(
         ? beforeAmounts[0].amountCents
         : 100;
 
-    // Detectar si el producto/categoría fue corregido
+    const chosenPart = repairPart || beforePart;
     const cat = matchCategory(repairPart, userCategories, learnedMatches);
-    const merchant = extractMerchant(repairPart) || extractMerchant(beforePart);
+    const merchant =
+      extractMerchant(repairPart, knownPlaces) ||
+      extractMerchant(beforePart, knownPlaces);
     const payment = detectPaymentMethod(repairPart) || detectPaymentMethod(beforePart);
+    const rawAmt = repairAmounts[0]?.rawMatch || beforeAmounts[0]?.rawMatch;
+    const note = cleanExpenseNote(chosenPart, rawAmt, merchant, cat.categoryName);
 
     return [
       {
@@ -739,7 +1122,7 @@ export function parseVoiceTranscript(
         categoryName: cat.categoryName,
         merchantName: merchant,
         paymentMethod: payment,
-        note: repairPart || beforePart,
+        note,
         occurredOn,
         confidence: 0.95,
         rawSegment: rawTranscript,
@@ -753,8 +1136,9 @@ export function parseVoiceTranscript(
   // Si no se detectó ningún monto, generamos un borrador con 0 para que el usuario complete
   if (amounts.length === 0) {
     const cat = matchCategory(rawTranscript, userCategories, learnedMatches);
-    const merchant = extractMerchant(rawTranscript);
+    const merchant = extractMerchant(rawTranscript, knownPlaces);
     const payment = detectPaymentMethod(rawTranscript);
+    const note = cleanExpenseNote(rawTranscript, undefined, merchant, cat.categoryName);
 
     return [
       {
@@ -763,7 +1147,7 @@ export function parseVoiceTranscript(
         categoryName: cat.categoryName,
         merchantName: merchant,
         paymentMethod: payment,
-        note: rawTranscript.trim(),
+        note,
         occurredOn,
         confidence: 0.5,
         rawSegment: rawTranscript,
@@ -775,8 +1159,9 @@ export function parseVoiceTranscript(
   if (amounts.length === 1) {
     const single = amounts[0];
     const cat = matchCategory(rawTranscript, userCategories, learnedMatches);
-    const merchant = extractMerchant(rawTranscript);
+    const merchant = extractMerchant(rawTranscript, knownPlaces);
     const payment = detectPaymentMethod(rawTranscript);
+    const note = cleanExpenseNote(rawTranscript, single.rawMatch, merchant, cat.categoryName);
 
     return [
       {
@@ -785,7 +1170,7 @@ export function parseVoiceTranscript(
         categoryName: cat.categoryName,
         merchantName: merchant,
         paymentMethod: payment,
-        note: rawTranscript.trim(),
+        note,
         occurredOn,
         confidence: cat.confidence,
         rawSegment: rawTranscript,
@@ -836,8 +1221,10 @@ export function parseVoiceTranscript(
     const segment = rawTranscript.substring(startIdx, endIdx).trim();
 
     const cat = matchCategory(segment, userCategories, learnedMatches);
-    const merchant = extractMerchant(segment);
+    const merchant = extractMerchant(segment, knownPlaces) || extractMerchant(rawTranscript, knownPlaces);
     const payment = detectPaymentMethod(segment);
+    const segmentDate = extractRelativeDate(segment, occurredOn);
+    const note = cleanExpenseNote(segment, curr.rawMatch, merchant, cat.categoryName);
 
     parsedExpenses.push({
       amountCents: curr.amountCents,
@@ -845,8 +1232,8 @@ export function parseVoiceTranscript(
       categoryName: cat.categoryName,
       merchantName: merchant,
       paymentMethod: payment,
-      note: segment.replace(new RegExp(curr.rawMatch, 'i'), '').trim() || segment,
-      occurredOn,
+      note,
+      occurredOn: segmentDate,
       confidence: cat.confidence,
       rawSegment: segment,
     });

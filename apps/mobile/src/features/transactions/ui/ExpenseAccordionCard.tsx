@@ -8,7 +8,7 @@ import {
 } from 'react-native';
 import { colors, spacing, radius, typography, fontFamilies } from '@/core/theme';
 import { Icon } from '@/core/ui';
-import { Category } from '@/features/categories';
+import { Category, CategorySelector } from '@/features/categories';
 import { PaymentMethod } from '../domain/types';
 
 export interface ExpenseItemState {
@@ -151,39 +151,15 @@ export const ExpenseAccordionCard: React.FC<ExpenseAccordionCardProps> = ({
             </View>
           </View>
 
-          {/* Categoría Grid */}
+          {/* Categoría Selector (incluye + Nueva categoría y botón Gestionar de main) */}
           <View style={styles.formSection}>
             <Text style={styles.fieldLabel}>CATEGORÍA</Text>
-            <View style={styles.categoriesGrid}>
-              {categoriesList.slice(0, 6).map((cat) => {
-                const isSelected = card.selectedCategory?.id === cat.id;
-                return (
-                  <Pressable
-                    key={cat.id}
-                    onPress={() => onUpdate({ selectedCategory: cat })}
-                    style={[
-                      styles.categoryGridItem,
-                      isSelected && styles.categoryGridItemSelected,
-                    ]}
-                  >
-                    <Icon
-                      name={cat.icon || 'Tag'}
-                      size={18}
-                      color={isSelected ? colors.primary : colors.ink2}
-                    />
-                    <Text
-                      style={[
-                        styles.categoryGridText,
-                        isSelected && styles.categoryGridTextSelected,
-                      ]}
-                      numberOfLines={1}
-                    >
-                      {cat.name}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </View>
+            <CategorySelector
+              selectedId={card.selectedCategory?.id || null}
+              onSelect={(cat) => onUpdate({ selectedCategory: cat })}
+              type="expense"
+              showManageLink={true}
+            />
           </View>
 
           {/* Establecimiento / Lugar */}
@@ -459,38 +435,7 @@ const styles = StyleSheet.create({
   formSection: {
     gap: spacing.xxs,
   },
-  categoriesGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.xs,
-  },
-  categoryGridItem: {
-    flexBasis: '31%',
-    flexGrow: 1,
-    height: 48,
-    borderRadius: 12,
-    backgroundColor: '#18181B',
-    borderWidth: 1,
-    borderColor: '#2A2A2F',
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexDirection: 'row',
-    gap: 6,
-    paddingHorizontal: spacing.xs,
-  },
-  categoryGridItemSelected: {
-    backgroundColor: '#26262B',
-    borderColor: colors.primary,
-  },
-  categoryGridText: {
-    ...typography.bodySmall,
-    color: colors.ink2,
-    fontSize: 11.5,
-  },
-  categoryGridTextSelected: {
-    color: colors.ink,
-    fontWeight: '700',
-  },
+
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'center',

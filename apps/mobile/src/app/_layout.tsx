@@ -8,8 +8,14 @@ import { initDatabase } from '@/core/db';
 export default function RootLayout() {
   const { fontsLoaded, fontError } = useAppFonts();
   const [dbReady, setDbReady] = useState(false);
+  const [forceReady, setForceReady] = useState(false);
 
   useEffect(() => {
+    // Timeout de seguridad: Si las fuentes tardan, continuar con fuentes del sistema tras 1.2s
+    const timer = setTimeout(() => {
+      setForceReady(true);
+    }, 1200);
+
     // initDatabase() es síncrono; se difiere el setState al microtask para
     // no renderizar en cascada desde el cuerpo del efecto (regla
     // react-hooks/set-state-in-effect) manteniendo la misma conducta.
@@ -21,9 +27,11 @@ export default function RootLayout() {
       }
       setDbReady(true);
     });
+
+    return () => clearTimeout(timer);
   }, []);
 
-  if ((!fontsLoaded && !fontError) || !dbReady) {
+  if (!forceReady && ((!fontsLoaded && !fontError) || !dbReady)) {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color={colors.primary} />

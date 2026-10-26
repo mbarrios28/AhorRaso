@@ -30,7 +30,6 @@ export const NewExpenseScreen: React.FC = () => {
   // Lista de categorías y establecimientos
   const [categoriesList, setCategoriesList] = useState<Category[]>([]);
   const [placesList, setPlacesList] = useState<string[]>(FREQUENT_PLACES);
-  const [currentBalanceCents, setCurrentBalanceCents] = useState<number>(0);
   const [selectedDateOffset, setSelectedDateOffset] = useState<0 | 1>(0); // 0 = Hoy, 1 = Ayer
 
   // Estado del modal de voz y banner de IA
@@ -69,13 +68,7 @@ export const NewExpenseScreen: React.FC = () => {
           );
         }
 
-        // 2. Saldo actual del usuario
-        const userProf = db.select().from(profile).where(eq(profile.id, DEV_USER_ID)).get();
-        if (mounted && userProf) {
-          setCurrentBalanceCents(userProf.initialBalanceCents);
-        }
-
-        // 3. Establecimientos guardados
+        // 2. Establecimientos guardados
         const saved = db
           .select()
           .from(merchants)
@@ -163,10 +156,17 @@ export const NewExpenseScreen: React.FC = () => {
       const parsedExpenses = parseVoiceTranscript(transcript, {
         userCategories: categoriesList.map((c) => ({ id: c.id, name: c.name, icon: c.icon })),
         learnedMatches,
+        knownPlaces: placesList,
         defaultDate: occurredOnISO,
       });
 
       if (parsedExpenses.length === 0) return;
+
+      // Si el dictado detectó que el gasto fue de ayer, ajustar el selector de fecha automáticamente
+      const todayISO = new Date().toISOString().split('T')[0];
+      if (parsedExpenses[0]?.occurredOn && parsedExpenses[0].occurredOn !== todayISO) {
+        setSelectedDateOffset(1);
+      }
 
       // 3. Convertir resultados a ExpenseItemState
       const newCards: ExpenseItemState[] = parsedExpenses.map((pe) => {
@@ -418,38 +418,6 @@ export const NewExpenseScreen: React.FC = () => {
               <Text style={styles.errorMessage}>{errorMsg}</Text>
             </View>
           )}
-
-          {/* Impacto en el Saldo en Tiempo Real */}
-          <View
-            style={[
-              styles.hintCard,
-              currentBalanceCents - totalCents < 0 && styles.hintCardWarning,
-            ]}
-          >
-            <Icon
-              name={currentBalanceCents - totalCents < 0 ? 'AlertTriangle' : 'Wallet'}
-              size={18}
-              color={currentBalanceCents - totalCents < 0 ? colors.tertiary : colors.secondary}
-            />
-            <View style={styles.hintContent}>
-              <Text style={styles.hintTitle}>
-                {currentBalanceCents - totalCents < 0
-                  ? 'Excede tu saldo disponible'
-                  : 'Impacto en tu saldo'}
-              </Text>
-              <Text style={styles.hintText}>
-                Saldo actual: S/ {(currentBalanceCents / 100).toFixed(2)} → Te quedarán:{' '}
-                <Text
-                  style={[
-                    styles.hintHighlight,
-                    currentBalanceCents - totalCents < 0 && { color: colors.tertiary },
-                  ]}
-                >
-                  S/ {((currentBalanceCents - totalCents) / 100).toFixed(2)}
-                </Text>
-              </Text>
-            </View>
-          </View>
         </ScrollView>
 
         {/* Sticky Footer Dinámico con Total General */}
@@ -695,39 +663,6 @@ const styles = StyleSheet.create({
   errorMessage: {
     ...typography.bodySmall,
     color: colors.danger,
-  },
-  hintCard: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: spacing.sm,
-    backgroundColor: '#18181B',
-    borderColor: 'rgba(42, 42, 47, 0.5)',
-    borderWidth: 1,
-    padding: spacing.base,
-    borderRadius: 16,
-  },
-  hintCardWarning: {
-    borderColor: 'rgba(223, 108, 107, 0.4)',
-    backgroundColor: 'rgba(223, 108, 107, 0.08)',
-  },
-  hintContent: {
-    flex: 1,
-    gap: 2,
-  },
-  hintTitle: {
-    ...typography.labelSmall,
-    color: colors.ink,
-    fontSize: 12,
-  },
-  hintText: {
-    ...typography.bodySmall,
-    color: colors.ink2,
-    lineHeight: 16,
-    fontSize: 12,
-  },
-  hintHighlight: {
-    fontFamily: fontFamilies.monoBold,
-    color: colors.secondary,
   },
   footer: {
     padding: spacing.gutter,

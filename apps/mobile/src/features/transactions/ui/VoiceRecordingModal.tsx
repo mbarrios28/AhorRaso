@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -9,6 +9,7 @@ import {
   TextInput,
   Platform,
   KeyboardAvoidingView,
+  ActivityIndicator,
 } from 'react-native';
 import { colors, spacing, radius, typography, fontFamilies } from '@/core/theme';
 import { Icon } from '@/core/ui';
@@ -25,6 +26,7 @@ export const VoiceRecordingModal: React.FC<VoiceRecordingModalProps> = ({
   onClose,
   onProcessTranscript,
 }) => {
+  const [isOrganizing, setIsOrganizing] = useState(false);
   const {
     isListening,
     transcript,
@@ -92,14 +94,23 @@ export const VoiceRecordingModal: React.FC<VoiceRecordingModalProps> = ({
   }, [visible, startListening, cancelListening, waveAnim1, waveAnim2, waveAnim3, waveAnim4, waveAnim5, waveAnim6]);
 
   const handleFinish = () => {
-    const finalTranscript = stopListening() || transcript;
-    onClose();
-    if (finalTranscript.trim()) {
-      onProcessTranscript(finalTranscript.trim());
-    }
+    if (isOrganizing) return;
+    setIsOrganizing(true);
+    // 1. Detener escucha nativa para que Android comience a vaciar su buffer de audio
+    stopListening();
+
+    // 2. Esperar 480ms mientras se muestra el spinner para capturar la última palabra hablada
+    setTimeout(() => {
+      setIsOrganizing(false);
+      onClose();
+      if (transcript.trim()) {
+        onProcessTranscript(transcript.trim());
+      }
+    }, 480);
   };
 
   const handleCancel = () => {
+    setIsOrganizing(false);
     cancelListening();
     onClose();
   };
@@ -177,6 +188,20 @@ export const VoiceRecordingModal: React.FC<VoiceRecordingModalProps> = ({
             {error && <Text style={styles.errorText}>{error}</Text>}
           </View>
 
+          {/* Píldora de Patrón Sugerido para Mayor Precisión */}
+          <View style={styles.patternNotice}>
+            <View style={styles.patternHeader}>
+              <Icon name="Compass" size={13} color={colors.primary} />
+              <Text style={styles.patternNoticeLabel}>PATRÓN SUGERIDO PARA MAYOR PRECISIÓN:</Text>
+            </View>
+            <Text style={styles.patternNoticeFormula}>
+              [Monto] <Text style={styles.patternDim}>en</Text> [Qué] <Text style={styles.patternDim}>en</Text> [Dónde] <Text style={styles.patternDim}>por</Text> [Pago]
+            </Text>
+            <Text style={styles.patternNoticeExample}>
+              Ej: "15 soles en almuerzo en Tambo por yape"
+            </Text>
+          </View>
+
           {/* Indicación de Expo Go / Teclado */}
           {isExpoGo && (
             <View style={styles.expoGoNotice}>
@@ -196,34 +221,32 @@ export const VoiceRecordingModal: React.FC<VoiceRecordingModalProps> = ({
             <Text style={styles.presetsLabel}>O PRUEBA CON UN EJEMPLO EN 1 TOQUE:</Text>
             <View style={styles.presetsRow}>
               <Pressable
+                onPress={() => handleQuickPreset('15 soles en almuerzo en Tambo por yape')}
+                style={styles.presetChip}
+              >
+                <Text style={styles.presetChipText}>Patrón ideal: 15 soles almuerzo Tambo yape</Text>
+              </Pressable>
+              <Pressable
                 onPress={() => handleQuickPreset('Menú 15 soles y taxi 5 soles')}
                 style={styles.presetChip}
               >
                 <Text style={styles.presetChipText}>Multi-gasto: Menú 15 y taxi 5</Text>
               </Pressable>
               <Pressable
+                onPress={() => handleQuickPreset('Dos lucas y media en fotocopias al contado')}
+                style={styles.presetChip}
+              >
+                <Text style={styles.presetChipText}>Jerga + efectivo: Dos lucas y media al contado</Text>
+              </Pressable>
+              <Pressable
                 onPress={() =>
                   handleQuickPreset(
-                    'Compré una galleta de 2 soles, ah no espera son 3 soles en el chino'
+                    'Compré una galleta de 2 soles, ah no espera son 3 soles en Don Pepe'
                   )
                 }
                 style={styles.presetChip}
               >
-                <Text style={styles.presetChipText}>Corrección: ah no espera...</Text>
-              </Pressable>
-              <Pressable
-                onPress={() => handleQuickPreset('Dos lucas y media en fotocopias')}
-                style={styles.presetChip}
-              >
-                <Text style={styles.presetChipText}>Jerga: Dos lucas y media</Text>
-              </Pressable>
-              <Pressable
-                onPress={() =>
-                  handleQuickPreset('Almuerzo 12 soles por yape en don pepe')
-                }
-                style={styles.presetChip}
-              >
-                <Text style={styles.presetChipText}>Comercio yape: Don Pepe</Text>
+                <Text style={styles.presetChipText}>Corrección: ah no espera son 3 en Don Pepe</Text>
               </Pressable>
             </View>
           </View>
@@ -232,7 +255,8 @@ export const VoiceRecordingModal: React.FC<VoiceRecordingModalProps> = ({
           <View style={styles.actionsRow}>
             <Pressable
               onPress={handleCancel}
-              style={styles.cancelBtn}
+              disabled={isOrganizing}
+              style={[styles.cancelBtn, isOrganizing && { opacity: 0.5 }]}
               accessibilityRole="button"
               accessibilityLabel="Cancelar dictado"
             >
@@ -242,15 +266,25 @@ export const VoiceRecordingModal: React.FC<VoiceRecordingModalProps> = ({
 
             <Pressable
               onPress={handleFinish}
+              disabled={isOrganizing || !transcript.trim()}
               style={[
                 styles.finishBtn,
-                !transcript.trim() && { opacity: 0.6 },
+                (!transcript.trim() || isOrganizing) && { opacity: 0.85 },
               ]}
               accessibilityRole="button"
               accessibilityLabel="Organizar compras dictadas"
             >
-              <Icon name="Check" size={18} color="#0D0D0F" />
-              <Text style={styles.finishBtnText}>Listo, organizar</Text>
+              {isOrganizing ? (
+                <>
+                  <ActivityIndicator size="small" color="#0D0D0F" />
+                  <Text style={styles.finishBtnText}>Organizando gastos...</Text>
+                </>
+              ) : (
+                <>
+                  <Icon name="Check" size={18} color="#0D0D0F" />
+                  <Text style={styles.finishBtnText}>Listo, organizar</Text>
+                </>
+              )}
             </Pressable>
           </View>
         </View>
@@ -370,6 +404,41 @@ const styles = StyleSheet.create({
     color: colors.danger,
     fontSize: 11,
     marginTop: 4,
+  },
+  patternNotice: {
+    padding: 10,
+    borderRadius: 12,
+    backgroundColor: 'rgba(57, 229, 137, 0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(57, 229, 137, 0.22)',
+    gap: 3,
+  },
+  patternHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  patternNoticeLabel: {
+    fontFamily: fontFamilies.monoBold,
+    fontSize: 9.5,
+    color: colors.primary,
+    letterSpacing: 0.6,
+  },
+  patternNoticeFormula: {
+    ...typography.labelSmall,
+    color: colors.ink,
+    fontSize: 11.5,
+    fontWeight: '700',
+  },
+  patternDim: {
+    color: colors.ink3,
+    fontWeight: '400',
+  },
+  patternNoticeExample: {
+    ...typography.bodySmall,
+    fontSize: 11,
+    color: colors.ink2,
+    fontStyle: 'italic',
   },
   expoGoNotice: {
     flexDirection: 'row',
