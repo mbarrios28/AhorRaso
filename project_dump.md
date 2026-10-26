@@ -1,7 +1,7 @@
 # Proyecto: AhorRaso
 
 - **Ruta:** `D:\UNSA\8VO SEMESTRE\Gestion de Proyectos de Software\AhorRaso`
-- **Archivos analizados:** 214
+- **Archivos analizados:** 222
 - **Archivos `.md` encontrados:** 103
 
 ## Estructura del proyecto
@@ -305,20 +305,30 @@ AhorRaso/
 │   │   │       │   │   └── dashboard.repository.ts
 │   │   │       │   ├── domain/
 │   │   │       │   │   └── types.ts
-│   │   │       │   └── index.ts
+│   │   │       │   ├── index.ts
+│   │   │       │   └── ui/
+│   │   │       │       └── DashboardScreen.tsx
 │   │   │       └── transactions/
 │   │   │           ├── data/
 │   │   │           │   ├── __tests__/
+│   │   │           │   │   ├── transactions.history.test.ts
 │   │   │           │   │   ├── transactions.income.test.ts
 │   │   │           │   │   └── transactions.repository.test.ts
 │   │   │           │   └── transactions.repository.ts
 │   │   │           ├── domain/
+│   │   │           │   ├── __tests__/
+│   │   │           │   │   └── history.test.ts
+│   │   │           │   ├── errors.ts
+│   │   │           │   ├── history.ts
 │   │   │           │   └── types.ts
 │   │   │           ├── index.ts
 │   │   │           └── ui/
 │   │   │               ├── EditTransactionCategoryModal.tsx
+│   │   │               ├── HistoryFiltersModal.tsx
+│   │   │               ├── HistoryScreen.tsx
 │   │   │               ├── NewExpenseScreen.tsx
-│   │   │               └── NewIncomeScreen.tsx
+│   │   │               ├── NewIncomeScreen.tsx
+│   │   │               └── useHistoryPagination.ts
 │   │   ├── test/
 │   │   │   ├── helpers/
 │   │   │   │   └── test-db.ts
@@ -541,14 +551,22 @@ AhorRaso/
 - `apps/mobile/src/features/dashboard/data/dashboard.repository.ts`
 - `apps/mobile/src/features/dashboard/data/__tests__/dashboard.repository.test.ts`
 - `apps/mobile/src/features/dashboard/domain/types.ts`
+- `apps/mobile/src/features/dashboard/ui/DashboardScreen.tsx`
 - `apps/mobile/src/features/transactions/index.ts`
 - `apps/mobile/src/features/transactions/data/transactions.repository.ts`
+- `apps/mobile/src/features/transactions/data/__tests__/transactions.history.test.ts`
 - `apps/mobile/src/features/transactions/data/__tests__/transactions.income.test.ts`
 - `apps/mobile/src/features/transactions/data/__tests__/transactions.repository.test.ts`
+- `apps/mobile/src/features/transactions/domain/errors.ts`
+- `apps/mobile/src/features/transactions/domain/history.ts`
 - `apps/mobile/src/features/transactions/domain/types.ts`
+- `apps/mobile/src/features/transactions/domain/__tests__/history.test.ts`
 - `apps/mobile/src/features/transactions/ui/EditTransactionCategoryModal.tsx`
+- `apps/mobile/src/features/transactions/ui/HistoryFiltersModal.tsx`
+- `apps/mobile/src/features/transactions/ui/HistoryScreen.tsx`
 - `apps/mobile/src/features/transactions/ui/NewExpenseScreen.tsx`
 - `apps/mobile/src/features/transactions/ui/NewIncomeScreen.tsx`
+- `apps/mobile/src/features/transactions/ui/useHistoryPagination.ts`
 - `apps/mobile/test/helpers/test-db.ts`
 - `apps/mobile/test/mocks/expo-crypto.ts`
 - `apps/mobile/test/mocks/expo-sqlite.ts`
@@ -676,6 +694,13 @@ La plataforma resuelve los problemas más comunes de la gestión financiera manu
 - Reasignación de categoría desde el historial de movimientos (`RF-004`), con validación de tipo (ingreso/gasto) en la capa de datos.
 - Sugerencia automática de iconos contextualizada al entorno universitario peruano (*combi*, *menú*, *fotocopias*, *chelas*, etc.).
 
+### 🧾 Historial de Movimientos con Filtros (`RF-009` / `HU-05`)
+- Listado cronológico unificado de ingresos y gastos, con totales del conjunto filtrado (ingresos, egresos y neto).
+- Filtros combinables: rango de fechas con atajos (*Hoy*, *Últimos 7 días*, *Este mes*, *Mes pasado*), categoría, tipo de movimiento, rango de monto y establecimiento.
+- Búsqueda de texto libre por comercio, nota o fuente del ingreso.
+- Paginación **keyset** por cursor en la capa de datos (páginas estables ante inserciones nuevas) con scroll infinito y botón "Cargar más" en la UI.
+- Validación de filtros en el dominio (formato de fechas y coherencia de rangos) con errores tipados que la UI traduce a mensajes legibles.
+
 ### 📊 Presupuestos Dinámicos y Alertas de Sobregiro
 - Configuración de topes mensuales y semanales por categoría.
 - Alertas proactivas automáticas al alcanzar el 80% y 100% del presupuesto asignado.
@@ -787,7 +812,8 @@ AhorRaso/
 │           │   └── ui/        # Componentes base (Icon de Lucide, Placeholders)
 │           └── features/      # Módulos por dominio de negocio (Feature-First)
 │               ├── categories/# Selector de categoría, creación in-flow y gestión (RF-004/RF-005)
-│               └── transactions/# Repositorio de transacciones, esquemas Zod y UI
+│               └── transactions/# Repositorio de transacciones, esquemas Zod, historial
+│                              # con filtros/paginación keyset (RF-009) y UI de registro
 │       ├── test/               # Infraestructura de pruebas (mocks de Expo/SQLite y helpers)
 │       ├── jest.config.js      # Configuración de Jest (ts-jest + node:sqlite)
 ├── docs/
@@ -47444,1009 +47470,32 @@ const styles = StyleSheet.create({
 ### `apps/mobile/src/app/(tabs)/history.tsx`
 
 ```tsx
-import React, { useState, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { useFocusEffect } from 'expo-router';
-import { colors, spacing, radius, typography } from '@/core/theme';
-import { Icon } from '@/core/ui';
-import { db, transactions, categories, Transaction, Category } from '@/core/db';
-import { DEV_USER_ID } from '@/core/dev/constants';
-import { eq, desc, isNull, and } from 'drizzle-orm';
-import { EditTransactionCategoryModal } from '@/features/transactions';
+import React from 'react';
+import { HistoryScreen } from '@/features/transactions';
 
-interface HistoryItem extends Transaction {
-  category?: Category;
-}
-
+/**
+ * Ruta del historial de movimientos (RF-009 / HU-05).
+ * La lógica de consulta, filtros y paginación vive en
+ * `features/transactions/ui/HistoryScreen`.
+ */
 export default function HistoryTab() {
-  const [items, setItems] = useState<HistoryItem[]>([]);
-  const [totalSpentCents, setTotalSpentCents] = useState(0);
-  const [selectedTx, setSelectedTx] = useState<Transaction | null>(null);
-
-  const loadHistory = useCallback(() => {
-    try {
-      const txList = db
-        .select()
-        .from(transactions)
-        .where(
-          and(
-            eq(transactions.userId, DEV_USER_ID),
-            isNull(transactions.deletedAt)
-          )
-        )
-        .orderBy(desc(transactions.occurredOn), desc(transactions.createdAt))
-        .all();
-
-      const allCats = db.select().from(categories).where(eq(categories.userId, DEV_USER_ID)).all();
-      const catMap = new Map(allCats.map((c) => [c.id, c]));
-
-      const enriched = txList.map((tx) => ({
-        ...tx,
-        category: catMap.get(tx.categoryId),
-      }));
-
-      setItems(enriched);
-
-      const sum = txList
-        .filter((t) => t.type === 'expense')
-        .reduce((acc, curr) => acc + curr.amountCents, 0);
-      setTotalSpentCents(sum);
-    } catch (e) {
-      console.error('Error al cargar historial:', e);
-    }
-  }, []);
-
-  useFocusEffect(
-    useCallback(() => {
-      loadHistory();
-    }, [loadHistory])
-  );
-
-  return (
-    <SafeAreaView style={styles.safeArea}>
-      <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
-        {/* Header */}
-        <View style={styles.header}>
-          <Text style={styles.headerTitle}>Historial de Movimientos</Text>
-          <View style={styles.totalBadge}>
-            <Text style={styles.totalBadgeLabel}>TOTAL EGRESOS</Text>
-            <Text style={styles.totalBadgeValue}>
-              S/ {(totalSpentCents / 100).toFixed(2)}
-            </Text>
-          </View>
-        </View>
-
-        {/* Lista */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>TODAS LAS TRANSACCIONES</Text>
-            <Text style={styles.countText}>{items.length} registros</Text>
-          </View>
-
-          {items.length === 0 ? (
-            <View style={styles.emptyContainer}>
-              <View style={styles.iconCircle}>
-                <Icon name="ReceiptText" size={28} color={colors.ink3} />
-              </View>
-              <Text style={styles.emptyTitle}>Sin movimientos aún</Text>
-              <Text style={styles.emptySubtitle}>
-                Los gastos que registres con el botón (+) aparecerán auditados aquí.
-              </Text>
-            </View>
-          ) : (
-            <View style={styles.listCard}>
-              {items.map((tx) => {
-                const cat = tx.category;
-                const isIncome = tx.type === 'income';
-                const formatted = (tx.amountCents / 100).toFixed(2);
-                const metaText = isIncome
-                  ? `${tx.source || 'Ingreso'}${tx.note ? ` · ${tx.note}` : ''} · ${tx.occurredOn}`
-                  : `${tx.note || (tx.paymentMethod === 'cash' ? 'Efectivo' : 'Yape / Plin')} · ${tx.occurredOn}`;
-
-                return (
-                  <Pressable
-                    key={tx.id}
-                    onPress={() => setSelectedTx(tx)}
-                    style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
-                    accessibilityRole="button"
-                    accessibilityLabel={`Cambiar categoría del movimiento ${cat?.name || 'sin categoría'} de ${formatted} soles`}
-                  >
-                    <View style={[styles.iconBox, { borderColor: colors.line }]}>
-                      <Icon
-                        name={cat?.icon || (isIncome ? 'Coins' : 'Tag')}
-                        size={18}
-                        color={cat?.color || (isIncome ? colors.secondary : colors.primary)}
-                      />
-                    </View>
-                    <View style={styles.rowInfo}>
-                      <Text style={styles.rowTitle} numberOfLines={1}>
-                        {cat?.name || (isIncome ? 'Ingreso' : 'Transacción')}
-                      </Text>
-                      <Text style={styles.rowSub} numberOfLines={1}>
-                        {metaText}
-                      </Text>
-                    </View>
-                    <Text
-                      style={[
-                        styles.rowAmount,
-                        isIncome && { color: colors.secondary },
-                      ]}
-                    >
-                      {isIncome ? '+ ' : '- '}S/ {formatted}
-                    </Text>
-                    <Icon name="Pencil" size={13} color={colors.ink3} />
-                  </Pressable>
-                );
-              })}
-            </View>
-          )}
-        </View>
-
-        {/* Info Box */}
-        <View style={styles.infoBox}>
-          <View style={styles.infoBadge}>
-            <Text style={styles.infoBadgeText}>RF-009 · HISTORIAL DE MOVIMIENTOS</Text>
-          </View>
-          <Text style={styles.infoText}>
-            Toca un movimiento para cambiar su categoría (RF-004). Asignado a Dev A para paginación
-            por keyset, filtros por fecha y búsqueda por comercio.
-          </Text>
-        </View>
-      </ScrollView>
-
-      {/* Modal de cambio de categoría (RF-004) */}
-      <EditTransactionCategoryModal
-        visible={selectedTx !== null}
-        transaction={selectedTx}
-        onClose={() => setSelectedTx(null)}
-        onSaved={() => loadHistory()}
-      />
-    </SafeAreaView>
-  );
+  return <HistoryScreen />;
 }
-
-const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: colors.bg,
-  },
-  container: {
-    padding: spacing.gutter,
-    paddingBottom: spacing.xxxl,
-    gap: spacing.base,
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: spacing.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.line,
-  },
-  headerTitle: {
-    ...typography.titleLarge,
-    flex: 1,
-  },
-  totalBadge: {
-    alignItems: 'flex-end',
-  },
-  totalBadgeLabel: {
-    ...typography.labelSmall,
-    fontSize: 9,
-    color: colors.ink3,
-  },
-  totalBadgeValue: {
-    ...typography.monoMedium,
-    color: colors.ink,
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  section: {
-    gap: spacing.xs,
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: spacing.xxs,
-  },
-  sectionTitle: {
-    ...typography.labelSmall,
-    color: colors.ink3,
-  },
-  countText: {
-    ...typography.monoSmall,
-    fontSize: 10,
-    color: colors.ink3,
-  },
-  emptyContainer: {
-    backgroundColor: colors.surface,
-    borderColor: colors.line,
-    borderWidth: 1,
-    borderRadius: radius.md,
-    padding: spacing.xl,
-    alignItems: 'center',
-    gap: spacing.xs,
-  },
-  iconCircle: {
-    width: 52,
-    height: 52,
-    borderRadius: radius.full,
-    backgroundColor: colors.surface2,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: spacing.xxs,
-  },
-  emptyTitle: {
-    ...typography.titleSmall,
-    color: colors.ink,
-  },
-  emptySubtitle: {
-    ...typography.bodySmall,
-    color: colors.ink3,
-    textAlign: 'center',
-    maxWidth: 260,
-  },
-  listCard: {
-    backgroundColor: colors.surface,
-    borderColor: colors.line,
-    borderWidth: 1,
-    borderRadius: radius.md,
-    overflow: 'hidden',
-  },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-    paddingHorizontal: spacing.base,
-    paddingVertical: spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.line,
-  },
-  rowPressed: {
-    backgroundColor: colors.surface2,
-  },
-  iconBox: {
-    width: 36,
-    height: 36,
-    borderRadius: radius.sm,
-    backgroundColor: colors.surface2,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  rowInfo: {
-    flex: 1,
-  },
-  rowTitle: {
-    ...typography.bodyMedium,
-    color: colors.ink,
-    fontWeight: '600',
-  },
-  rowSub: {
-    ...typography.bodySmall,
-    color: colors.ink3,
-    fontSize: 11,
-    marginTop: 2,
-  },
-  rowAmount: {
-    ...typography.monoMedium,
-    color: colors.ink,
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  infoBox: {
-    backgroundColor: colors.surface,
-    borderColor: colors.line,
-    borderWidth: 1,
-    borderRadius: radius.md,
-    padding: spacing.base,
-    gap: spacing.xs,
-    marginTop: spacing.xs,
-  },
-  infoBadge: {
-    alignSelf: 'flex-start',
-    backgroundColor: colors.surface2,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 2,
-    borderRadius: radius.xs,
-  },
-  infoBadgeText: {
-    ...typography.monoSmall,
-    fontSize: 10,
-    color: colors.primary,
-  },
-  infoText: {
-    ...typography.bodySmall,
-    color: colors.ink2,
-    lineHeight: 18,
-  },
-});
 ```
 
 ### `apps/mobile/src/app/(tabs)/index.tsx`
 
 ```tsx
-import React, { useState, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { router, useFocusEffect } from 'expo-router';
-import { colors, spacing, radius, typography } from '@/core/theme';
-import { Icon } from '@/core/ui';
-import { db, profile, Profile } from '@/core/db';
-import { DEV_USER_ID } from '@/core/dev/constants';
-import { eq } from 'drizzle-orm';
-import { dashboardRepository, DashboardSummary } from '@/features/dashboard';
+import React from 'react';
+import { DashboardScreen } from '@/features/dashboard';
 
-export default function DashboardScreen() {
-  const [userProfile, setUserProfile] = useState<Profile | null>(null);
-  const [summary, setSummary] = useState<DashboardSummary | null>(null);
-
-  // useFocusEffect se ejecuta cada vez que el usuario vuelve a la pantalla
-  // Garantiza RNF-003: carga síncrona inmediata desde SQLite local en < 50 ms.
-  useFocusEffect(
-    useCallback(() => {
-      try {
-        // 1. Cargar perfil del usuario
-        const p = db.select().from(profile).where(eq(profile.id, DEV_USER_ID)).get();
-        if (p) setUserProfile(p);
-
-        // 2. Obtener resumen financiero completo (RF-008 / HU-04)
-        const dashData = dashboardRepository.getDashboardSummary(DEV_USER_ID);
-        setSummary(dashData);
-      } catch (e) {
-        console.error('Error al actualizar datos del dashboard:', e);
-      }
-    }, [])
-  );
-
-  const monthLabel = summary ? summary.monthName.slice(0, 3).toUpperCase() : 'MES';
-
-  return (
-    <SafeAreaView style={styles.safeArea}>
-      <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
-        {/* 1. Header Superior */}
-        <View style={styles.header}>
-          <View>
-            <Text style={styles.greeting}>Hola, {userProfile?.displayName || 'Estudiante UNSA'}</Text>
-            <Text style={styles.campus}>UNSA · Arequipa</Text>
-          </View>
-          <View style={styles.headerAction}>
-            <View style={styles.statusDot} />
-            <Text style={styles.statusText}>Offline-First</Text>
-          </View>
-        </View>
-
-        {/* 2. Card Principal: Saldo Disponible */}
-        <View style={styles.balanceCard}>
-          <View style={styles.balanceHeaderRow}>
-            <Text style={styles.balanceLabel}>SALDO DISPONIBLE</Text>
-            <View style={styles.balanceTrendBadge}>
-              <Icon name="TrendingUp" size={12} color={colors.secondary} />
-              <Text style={styles.balanceTrendText}>Activo</Text>
-            </View>
-          </View>
-          <Text style={styles.balanceAmount}>{summary?.formattedBalance || 'S/ 0.00'}</Text>
-          <View style={styles.balanceFooter}>
-            <Text style={styles.balanceFooterText}>
-              Disponible para {summary?.monthName || 'el mes'} · {summary?.totalTransactionsCount || 0} transacciones locales
-            </Text>
-          </View>
-        </View>
-
-        {/* 3. Acciones Rápidas (CTAs del equipo: Nuevo Gasto y Nuevo Ingreso) */}
-        <View style={styles.ctaRow}>
-          <Pressable
-            onPress={() => router.push('/new-expense')}
-            style={({ pressed }) => [
-              styles.ctaCardHalf,
-              pressed && { opacity: 0.9, transform: [{ scale: 0.99 }] },
-            ]}
-            accessibilityRole="button"
-            accessibilityLabel="Registrar nuevo gasto"
-          >
-            <View style={styles.ctaIconExpense}>
-              <Icon name="ArrowDownRight" size={18} color="#0D0D0F" strokeWidth={2.4} />
-            </View>
-            <View style={styles.ctaHalfContent}>
-              <Text style={styles.ctaHalfTitle}>Nuevo gasto</Text>
-              <Text style={styles.ctaHalfSubtitle}>Punto de venta (RF-002)</Text>
-            </View>
-          </Pressable>
-
-          <Pressable
-            onPress={() => router.push('/new-income')}
-            style={({ pressed }) => [
-              styles.ctaCardHalf,
-              styles.ctaCardIncome,
-              pressed && { opacity: 0.9, transform: [{ scale: 0.99 }] },
-            ]}
-            accessibilityRole="button"
-            accessibilityLabel="Registrar nuevo ingreso"
-          >
-            <View style={styles.ctaIconIncome}>
-              <Icon name="ArrowUpRight" size={18} color="#0D0D0F" strokeWidth={2.4} />
-            </View>
-            <View style={styles.ctaHalfContent}>
-              <Text style={styles.ctaHalfTitle}>Nuevo ingreso</Text>
-              <Text style={styles.ctaHalfSubtitle}>Registrar entrada (RF-001)</Text>
-            </View>
-          </Pressable>
-        </View>
-
-        {/* 4. Resumen Mensual: Ingresos vs Gastos del Mes (RF-008 / HU-04) */}
-        <View style={styles.summaryGrid}>
-          {/* Card Ingresos del Mes */}
-          <View style={styles.summaryMetricCard}>
-            <View style={styles.metricHeader}>
-              <Text style={styles.metricLabel}>INGRESOS ({monthLabel})</Text>
-              <Icon name="ArrowUpRight" size={14} color={colors.secondary} />
-            </View>
-            <Text style={[styles.metricAmount, { color: colors.ink }]}>
-              {summary?.formattedMonthlyIncome || 'S/ 0.00'}
-            </Text>
-          </View>
-
-          {/* Card Gastos del Mes */}
-          <View style={styles.summaryMetricCard}>
-            <View style={styles.metricHeader}>
-              <Text style={styles.metricLabel}>GASTOS ({monthLabel})</Text>
-              <Icon name="ArrowDownRight" size={14} color={colors.tertiary} />
-            </View>
-            <Text style={[styles.metricAmount, { color: colors.ink }]}>
-              {summary?.formattedMonthlyExpense || 'S/ 0.00'}
-            </Text>
-          </View>
-        </View>
-
-        {/* 5. Proyección Fin de Mes y Diario Seguro (RF-008 / HU-04) */}
-        <View style={styles.projectionCard}>
-          <View style={styles.projectionHeaderRow}>
-            <Text style={styles.projectionTitle}>PROYECCIÓN FIN DE MES</Text>
-            <View style={styles.safeDailyBadge}>
-              <Text style={styles.safeDailyAmount}>
-                {summary?.projection.formattedSafeDaily || 'S/ 0.00'}
-              </Text>
-              <Text style={styles.safeDailyUnit}> / día</Text>
-            </View>
-          </View>
-
-          <View style={styles.projectionSubRow}>
-            <Text style={styles.projectionDaysText}>
-              Quedan {summary?.projection.daysRemaining ?? 0} días de ciclo
-            </Text>
-            <Text style={styles.projectionLabelBadge}>DIARIO SEGURO</Text>
-          </View>
-
-          {/* Barra de progreso del ciclo mensual */}
-          <View style={styles.cycleProgressTrack}>
-            <View
-              style={[
-                styles.cycleProgressFill,
-                { width: `${summary?.projection.cycleElapsedPercentage || 0}%` },
-              ]}
-            />
-          </View>
-          <Text style={styles.cycleElapsedText}>
-            {summary?.projection.cycleElapsedPercentage || 0}% del ciclo consumido
-          </Text>
-        </View>
-
-        {/* 6. Gastos por Categoría (RF-008 / HU-04) */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeaderRow}>
-            <Text style={styles.sectionTitle}>GASTOS POR CATEGORÍA</Text>
-            <Text style={styles.sectionHint}>{summary?.monthName?.toUpperCase() || 'OCTUBRE'}</Text>
-          </View>
-
-          {!summary || summary.categoryExpenses.length === 0 ? (
-            <View style={styles.emptyCard}>
-              <Icon name="PieChart" size={26} color={colors.ink3} />
-              <Text style={styles.emptyText}>Aún no has registrado gastos este mes.</Text>
-            </View>
-          ) : (
-            <View style={styles.categoryExpensesCard}>
-              {summary.categoryExpenses.map((cat, index) => {
-                const isLast = index === summary.categoryExpenses.length - 1;
-                return (
-                  <View
-                    key={cat.categoryId}
-                    style={[styles.categoryExpenseRow, !isLast && styles.categoryRowBorder]}
-                  >
-                    <View style={styles.catRowHeader}>
-                      <View style={styles.catIconAndTitle}>
-                        <View style={[styles.catIconCircle, { backgroundColor: colors.surface2 }]}>
-                          <Icon name={cat.categoryIcon} size={16} color={cat.categoryColor} />
-                        </View>
-                        <Text style={styles.catNameText} numberOfLines={1}>
-                          {cat.categoryName}
-                        </Text>
-                      </View>
-                      <View style={styles.catAmounts}>
-                        <Text style={styles.catAmountText}>{cat.formattedAmount}</Text>
-                        <Text style={styles.catPercentageText}>{cat.percentage}%</Text>
-                      </View>
-                    </View>
-
-                    {/* Barra de progreso de la categoría */}
-                    <View style={styles.catProgressBarTrack}>
-                      <View
-                        style={[
-                          styles.catProgressBarFill,
-                          {
-                            width: `${Math.min(100, Math.max(3, cat.percentage))}%`,
-                            backgroundColor: cat.categoryColor || colors.secondary,
-                          },
-                        ]}
-                      />
-                    </View>
-                  </View>
-                );
-              })}
-            </View>
-          )}
-        </View>
-
-        {/* 7. Metas de Ahorro (Mock desacoplado de RF-007) */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeaderRow}>
-            <Text style={styles.sectionTitle}>METAS DE AHORRO</Text>
-            <Text style={styles.sectionActionText}>GESTIONAR</Text>
-          </View>
-
-          <View style={styles.goalCard}>
-            <View style={styles.goalHeaderRow}>
-              <View style={styles.goalInfoLeft}>
-                <View style={styles.goalIconCircle}>
-                  <Icon name="Laptop" size={18} color={colors.secondary} />
-                </View>
-                <View>
-                  <Text style={styles.goalTitle}>{summary?.activeGoal.title || 'Laptop para ciclo'}</Text>
-                  <Text style={styles.goalDeadline}>{summary?.activeGoal.deadlineText || 'Meta para marzo 2027'}</Text>
-                </View>
-              </View>
-              <View style={styles.goalAmountsRight}>
-                <Text style={styles.goalAmountText}>
-                  {summary?.activeGoal.formattedCurrent || 'S/ 120.00'}{' '}
-                  <Text style={styles.goalTargetText}>/ {summary?.activeGoal.formattedTarget || 'S/ 500.00'}</Text>
-                </Text>
-                <Text style={styles.goalPercentageBadge}>{summary?.activeGoal.percentage || 24}%</Text>
-              </View>
-            </View>
-
-            {/* Barra de progreso de la meta */}
-            <View style={styles.goalProgressTrack}>
-              <View
-                style={[
-                  styles.goalProgressFill,
-                  { width: `${summary?.activeGoal.percentage || 24}%` },
-                ]}
-              />
-            </View>
-          </View>
-        </View>
-      </ScrollView>
-    </SafeAreaView>
-  );
+/**
+ * Ruta principal de Expo Router (Tab Index): Dashboard Financiero (RF-008 / HU-04).
+ * Delega la presentación y comportamiento al componente de feature DashboardScreen.
+ */
+export default function DashboardRoute() {
+  return <DashboardScreen />;
 }
-
-const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: colors.bg,
-  },
-  container: {
-    padding: spacing.gutter,
-    paddingBottom: spacing.xxxl,
-    gap: spacing.base,
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingTop: spacing.xs,
-    marginBottom: spacing.xxs,
-  },
-  greeting: {
-    ...typography.titleMedium,
-    color: colors.ink,
-  },
-  campus: {
-    ...typography.bodySmall,
-    color: colors.ink3,
-  },
-  headerAction: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
-    backgroundColor: colors.surface,
-    borderColor: colors.line,
-    borderWidth: 1,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
-    borderRadius: radius.full,
-  },
-  statusDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: colors.secondary,
-  },
-  statusText: {
-    ...typography.monoSmall,
-    fontSize: 10,
-    color: colors.ink2,
-  },
-  balanceCard: {
-    backgroundColor: colors.surface,
-    borderColor: colors.line,
-    borderWidth: 1,
-    borderRadius: radius.lg,
-    padding: spacing.base,
-  },
-  balanceHeaderRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: spacing.xs,
-  },
-  balanceLabel: {
-    ...typography.labelSmall,
-    color: colors.ink3,
-  },
-  balanceTrendBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: colors.surface2,
-    paddingHorizontal: spacing.xs,
-    paddingVertical: 2,
-    borderRadius: radius.full,
-  },
-  balanceTrendText: {
-    ...typography.monoSmall,
-    fontSize: 10,
-    color: colors.secondary,
-  },
-  balanceAmount: {
-    ...typography.amountLarge,
-    fontSize: 36,
-    lineHeight: 42,
-    color: colors.ink,
-  },
-  balanceFooter: {
-    marginTop: spacing.md,
-    paddingTop: spacing.sm,
-    borderTopWidth: 1,
-    borderTopColor: colors.line,
-  },
-  balanceFooterText: {
-    ...typography.bodySmall,
-    color: colors.ink3,
-  },
-  ctaRow: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-  },
-  ctaCardHalf: {
-    flex: 1,
-    flexDirection: 'column',
-    alignItems: 'flex-start',
-    gap: spacing.xs,
-    backgroundColor: colors.surface2,
-    borderColor: colors.line,
-    borderWidth: 1,
-    borderRadius: radius.md,
-    padding: spacing.md,
-  },
-  ctaCardIncome: {
-    backgroundColor: colors.surface,
-  },
-  ctaIconExpense: {
-    width: 32,
-    height: 32,
-    borderRadius: radius.xs,
-    backgroundColor: colors.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  ctaIconIncome: {
-    width: 32,
-    height: 32,
-    borderRadius: radius.xs,
-    backgroundColor: colors.secondary,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  ctaHalfContent: {
-    marginTop: 2,
-  },
-  ctaHalfTitle: {
-    ...typography.titleSmall,
-    color: colors.ink,
-    fontSize: 13,
-  },
-  ctaHalfSubtitle: {
-    ...typography.bodySmall,
-    color: colors.ink3,
-    fontSize: 11,
-    marginTop: 2,
-  },
-  summaryGrid: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-  },
-  summaryMetricCard: {
-    flex: 1,
-    backgroundColor: colors.surface,
-    borderColor: colors.line,
-    borderWidth: 1,
-    borderRadius: radius.md,
-    padding: spacing.md,
-  },
-  metricHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: spacing.xs,
-  },
-  metricLabel: {
-    ...typography.labelSmall,
-    fontSize: 10,
-    color: colors.ink3,
-  },
-  metricAmount: {
-    ...typography.monoMedium,
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  projectionCard: {
-    backgroundColor: colors.surface,
-    borderColor: colors.line,
-    borderWidth: 1,
-    borderRadius: radius.md,
-    padding: spacing.base,
-    gap: spacing.xs,
-  },
-  projectionHeaderRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  projectionTitle: {
-    ...typography.labelSmall,
-    color: colors.ink3,
-  },
-  safeDailyBadge: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-  },
-  safeDailyAmount: {
-    ...typography.monoMedium,
-    color: colors.secondary,
-    fontWeight: '700',
-    fontSize: 14,
-  },
-  safeDailyUnit: {
-    ...typography.monoSmall,
-    fontSize: 11,
-    color: colors.ink3,
-  },
-  projectionSubRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: 2,
-  },
-  projectionDaysText: {
-    ...typography.bodySmall,
-    color: colors.ink2,
-  },
-  projectionLabelBadge: {
-    ...typography.monoSmall,
-    fontSize: 9,
-    letterSpacing: 0.8,
-    color: colors.ink3,
-    textTransform: 'uppercase',
-  },
-  cycleProgressTrack: {
-    width: '100%',
-    height: 5,
-    backgroundColor: colors.surface2,
-    borderRadius: radius.full,
-    overflow: 'hidden',
-    marginTop: spacing.xs,
-  },
-  cycleProgressFill: {
-    height: '100%',
-    backgroundColor: colors.secondary,
-    borderRadius: radius.full,
-  },
-  cycleElapsedText: {
-    ...typography.monoSmall,
-    fontSize: 10,
-    color: colors.ink3,
-    marginTop: 2,
-  },
-  section: {
-    gap: spacing.xs,
-  },
-  sectionHeaderRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: spacing.xxs,
-  },
-  sectionTitle: {
-    ...typography.labelSmall,
-    color: colors.ink3,
-  },
-  sectionHint: {
-    ...typography.monoSmall,
-    fontSize: 10,
-    color: colors.ink3,
-  },
-  sectionActionText: {
-    ...typography.monoSmall,
-    fontSize: 10,
-    color: colors.secondary,
-    fontWeight: '600',
-  },
-  emptyCard: {
-    backgroundColor: colors.surface,
-    borderColor: colors.line,
-    borderWidth: 1,
-    borderRadius: radius.md,
-    padding: spacing.xl,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.xs,
-  },
-  emptyText: {
-    ...typography.bodySmall,
-    color: colors.ink3,
-  },
-  categoryExpensesCard: {
-    backgroundColor: colors.surface,
-    borderColor: colors.line,
-    borderWidth: 1,
-    borderRadius: radius.md,
-    padding: spacing.base,
-    gap: spacing.md,
-  },
-  categoryExpenseRow: {
-    gap: spacing.xs,
-  },
-  categoryRowBorder: {
-    paddingBottom: spacing.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.line,
-  },
-  catRowHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  catIconAndTitle: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    flex: 1,
-  },
-  catIconCircle: {
-    width: 28,
-    height: 28,
-    borderRadius: radius.sm,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  catNameText: {
-    ...typography.bodyMedium,
-    color: colors.ink,
-    fontWeight: '500',
-    flex: 1,
-  },
-  catAmounts: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-  },
-  catAmountText: {
-    ...typography.monoMedium,
-    fontSize: 13,
-    color: colors.ink,
-    fontWeight: '600',
-  },
-  catPercentageText: {
-    ...typography.monoSmall,
-    fontSize: 11,
-    color: colors.ink3,
-    width: 32,
-    textAlign: 'right',
-  },
-  catProgressBarTrack: {
-    width: '100%',
-    height: 4,
-    backgroundColor: colors.surface2,
-    borderRadius: radius.full,
-    overflow: 'hidden',
-  },
-  catProgressBarFill: {
-    height: '100%',
-    borderRadius: radius.full,
-  },
-  goalCard: {
-    backgroundColor: colors.surface,
-    borderColor: colors.line,
-    borderWidth: 1,
-    borderRadius: radius.md,
-    padding: spacing.base,
-    gap: spacing.sm,
-  },
-  goalHeaderRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  goalInfoLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    flex: 1,
-  },
-  goalIconCircle: {
-    width: 32,
-    height: 32,
-    borderRadius: radius.sm,
-    backgroundColor: colors.surface2,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  goalTitle: {
-    ...typography.titleSmall,
-    fontSize: 13,
-    color: colors.ink,
-  },
-  goalDeadline: {
-    ...typography.monoSmall,
-    fontSize: 10,
-    color: colors.ink3,
-    marginTop: 2,
-  },
-  goalAmountsRight: {
-    alignItems: 'flex-end',
-  },
-  goalAmountText: {
-    ...typography.monoMedium,
-    fontSize: 13,
-    fontWeight: '600',
-    color: colors.ink,
-  },
-  goalTargetText: {
-    color: colors.ink3,
-    fontWeight: '400',
-  },
-  goalPercentageBadge: {
-    ...typography.monoSmall,
-    fontSize: 10,
-    color: colors.secondary,
-    fontWeight: '700',
-    marginTop: 2,
-  },
-  goalProgressTrack: {
-    width: '100%',
-    height: 5,
-    backgroundColor: colors.surface2,
-    borderRadius: radius.full,
-    overflow: 'hidden',
-  },
-  goalProgressFill: {
-    height: '100%',
-    backgroundColor: colors.secondary,
-    borderRadius: radius.full,
-  },
-});
 ```
 
 ### `apps/mobile/src/app/(tabs)/new-action.tsx`
@@ -52176,8 +51225,14 @@ const styles = StyleSheet.create({
 ### `apps/mobile/src/features/dashboard/index.ts`
 
 ```typescript
+/**
+ * Feature: Dashboard
+ * Módulo autocontenido para el panel financiero integral (RF-008 / HU-04).
+ */
+
 export * from './domain/types';
 export * from './data/dashboard.repository';
+export * from './ui/DashboardScreen';
 ```
 
 ### `apps/mobile/src/features/dashboard/data/dashboard.repository.ts`
@@ -52640,34 +51695,729 @@ export interface DashboardSummary {
 }
 ```
 
+### `apps/mobile/src/features/dashboard/ui/DashboardScreen.tsx`
+
+```tsx
+import React, { useState, useCallback } from 'react';
+import { View, Text, StyleSheet, ScrollView, Pressable } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { router, useFocusEffect } from 'expo-router';
+import { colors, spacing, radius, typography } from '@/core/theme';
+import { Icon } from '@/core/ui';
+import { db, profile, Profile } from '@/core/db';
+import { DEV_USER_ID } from '@/core/dev/constants';
+import { eq } from 'drizzle-orm';
+import { DashboardSummary } from '../domain/types';
+import { dashboardRepository } from '../data/dashboard.repository';
+
+/**
+ * Pantalla principal del Dashboard Financiero (RF-008 / HU-04).
+ * Presenta el estado financiero consolidado del usuario para el mes en curso.
+ */
+export function DashboardScreen() {
+  const [userProfile, setUserProfile] = useState<Profile | null>(null);
+  const [summary, setSummary] = useState<DashboardSummary | null>(null);
+
+  // useFocusEffect se ejecuta cada vez que el usuario vuelve a la pantalla
+  // Garantiza RNF-003: carga síncrona inmediata desde SQLite local en < 50 ms.
+  useFocusEffect(
+    useCallback(() => {
+      try {
+        // 1. Cargar perfil del usuario
+        const p = db.select().from(profile).where(eq(profile.id, DEV_USER_ID)).get();
+        if (p) setUserProfile(p);
+
+        // 2. Obtener resumen financiero completo (RF-008 / HU-04)
+        const dashData = dashboardRepository.getDashboardSummary(DEV_USER_ID);
+        setSummary(dashData);
+      } catch (e) {
+        console.error('Error al actualizar datos del dashboard:', e);
+      }
+    }, [])
+  );
+
+  const monthLabel = summary ? summary.monthName.slice(0, 3).toUpperCase() : 'MES';
+
+  return (
+    <SafeAreaView style={styles.safeArea}>
+      <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
+        {/* 1. Header Superior */}
+        <View style={styles.header}>
+          <View>
+            <Text style={styles.greeting}>Hola, {userProfile?.displayName || 'Estudiante UNSA'}</Text>
+            <Text style={styles.campus}>UNSA · Arequipa</Text>
+          </View>
+          <View style={styles.headerAction}>
+            <View style={styles.statusDot} />
+            <Text style={styles.statusText}>Offline-First</Text>
+          </View>
+        </View>
+
+        {/* 2. Card Principal: Saldo Disponible */}
+        <View style={styles.balanceCard}>
+          <View style={styles.balanceHeaderRow}>
+            <Text style={styles.balanceLabel}>SALDO DISPONIBLE</Text>
+            <View style={styles.balanceTrendBadge}>
+              <Icon name="TrendingUp" size={12} color={colors.secondary} />
+              <Text style={styles.balanceTrendText}>Activo</Text>
+            </View>
+          </View>
+          <Text style={styles.balanceAmount}>{summary?.formattedBalance || 'S/ 0.00'}</Text>
+          <View style={styles.balanceFooter}>
+            <Text style={styles.balanceFooterText}>
+              Disponible para {summary?.monthName || 'el mes'} · {summary?.totalTransactionsCount || 0} transacciones locales
+            </Text>
+          </View>
+        </View>
+
+        {/* 3. Acciones Rápidas (CTAs del equipo: Nuevo Gasto y Nuevo Ingreso) */}
+        <View style={styles.ctaRow}>
+          <Pressable
+            onPress={() => router.push('/new-expense')}
+            style={({ pressed }) => [
+              styles.ctaCardHalf,
+              pressed && { opacity: 0.9, transform: [{ scale: 0.99 }] },
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel="Registrar nuevo gasto"
+          >
+            <View style={styles.ctaIconExpense}>
+              <Icon name="ArrowDownRight" size={18} color="#0D0D0F" strokeWidth={2.4} />
+            </View>
+            <View style={styles.ctaHalfContent}>
+              <Text style={styles.ctaHalfTitle}>Nuevo gasto</Text>
+              <Text style={styles.ctaHalfSubtitle}>Punto de venta (RF-002)</Text>
+            </View>
+          </Pressable>
+
+          <Pressable
+            onPress={() => router.push('/new-income')}
+            style={({ pressed }) => [
+              styles.ctaCardHalf,
+              styles.ctaCardIncome,
+              pressed && { opacity: 0.9, transform: [{ scale: 0.99 }] },
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel="Registrar nuevo ingreso"
+          >
+            <View style={styles.ctaIconIncome}>
+              <Icon name="ArrowUpRight" size={18} color="#0D0D0F" strokeWidth={2.4} />
+            </View>
+            <View style={styles.ctaHalfContent}>
+              <Text style={styles.ctaHalfTitle}>Nuevo ingreso</Text>
+              <Text style={styles.ctaHalfSubtitle}>Registrar entrada (RF-001)</Text>
+            </View>
+          </Pressable>
+        </View>
+
+        {/* 4. Resumen Mensual: Ingresos vs Gastos del Mes (RF-008 / HU-04) */}
+        <View style={styles.summaryGrid}>
+          {/* Card Ingresos del Mes */}
+          <View style={styles.summaryMetricCard}>
+            <View style={styles.metricHeader}>
+              <Text style={styles.metricLabel}>INGRESOS ({monthLabel})</Text>
+              <Icon name="ArrowUpRight" size={14} color={colors.secondary} />
+            </View>
+            <Text style={[styles.metricAmount, { color: colors.ink }]}>
+              {summary?.formattedMonthlyIncome || 'S/ 0.00'}
+            </Text>
+          </View>
+
+          {/* Card Gastos del Mes */}
+          <View style={styles.summaryMetricCard}>
+            <View style={styles.metricHeader}>
+              <Text style={styles.metricLabel}>GASTOS ({monthLabel})</Text>
+              <Icon name="ArrowDownRight" size={14} color={colors.tertiary} />
+            </View>
+            <Text style={[styles.metricAmount, { color: colors.ink }]}>
+              {summary?.formattedMonthlyExpense || 'S/ 0.00'}
+            </Text>
+          </View>
+        </View>
+
+        {/* 5. Proyección Fin de Mes y Diario Seguro (RF-008 / HU-04) */}
+        <View style={styles.projectionCard}>
+          <View style={styles.projectionHeaderRow}>
+            <Text style={styles.projectionTitle}>PROYECCIÓN FIN DE MES</Text>
+            <View style={styles.safeDailyBadge}>
+              <Text style={styles.safeDailyAmount}>
+                {summary?.projection.formattedSafeDaily || 'S/ 0.00'}
+              </Text>
+              <Text style={styles.safeDailyUnit}> / día</Text>
+            </View>
+          </View>
+
+          <View style={styles.projectionSubRow}>
+            <Text style={styles.projectionDaysText}>
+              Quedan {summary?.projection.daysRemaining ?? 0} días de ciclo
+            </Text>
+            <Text style={styles.projectionLabelBadge}>DIARIO SEGURO</Text>
+          </View>
+
+          {/* Barra de progreso del ciclo mensual */}
+          <View style={styles.cycleProgressTrack}>
+            <View
+              style={[
+                styles.cycleProgressFill,
+                { width: `${summary?.projection.cycleElapsedPercentage || 0}%` },
+              ]}
+            />
+          </View>
+          <Text style={styles.cycleElapsedText}>
+            {summary?.projection.cycleElapsedPercentage || 0}% del ciclo consumido
+          </Text>
+        </View>
+
+        {/* 6. Gastos por Categoría (RF-008 / HU-04) */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeaderRow}>
+            <Text style={styles.sectionTitle}>GASTOS POR CATEGORÍA</Text>
+            <Text style={styles.sectionHint}>{summary?.monthName?.toUpperCase() || 'OCTUBRE'}</Text>
+          </View>
+
+          {!summary || summary.categoryExpenses.length === 0 ? (
+            <View style={styles.emptyCard}>
+              <Icon name="PieChart" size={26} color={colors.ink3} />
+              <Text style={styles.emptyText}>Aún no has registrado gastos este mes.</Text>
+            </View>
+          ) : (
+            <View style={styles.categoryExpensesCard}>
+              {summary.categoryExpenses.map((cat, index) => {
+                const isLast = index === summary.categoryExpenses.length - 1;
+                return (
+                  <View
+                    key={cat.categoryId}
+                    style={[styles.categoryExpenseRow, !isLast && styles.categoryRowBorder]}
+                  >
+                    <View style={styles.catRowHeader}>
+                      <View style={styles.catIconAndTitle}>
+                        <View style={[styles.catIconCircle, { backgroundColor: colors.surface2 }]}>
+                          <Icon name={cat.categoryIcon} size={16} color={cat.categoryColor} />
+                        </View>
+                        <Text style={styles.catNameText} numberOfLines={1}>
+                          {cat.categoryName}
+                        </Text>
+                      </View>
+                      <View style={styles.catAmounts}>
+                        <Text style={styles.catAmountText}>{cat.formattedAmount}</Text>
+                        <Text style={styles.catPercentageText}>{cat.percentage}%</Text>
+                      </View>
+                    </View>
+
+                    {/* Barra de progreso de la categoría */}
+                    <View style={styles.catProgressBarTrack}>
+                      <View
+                        style={[
+                          styles.catProgressBarFill,
+                          {
+                            width: `${Math.min(100, Math.max(3, cat.percentage))}%`,
+                            backgroundColor: cat.categoryColor || colors.secondary,
+                          },
+                        ]}
+                      />
+                    </View>
+                  </View>
+                );
+              })}
+            </View>
+          )}
+        </View>
+
+        {/* 7. Metas de Ahorro (Mock desacoplado de RF-007) */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeaderRow}>
+            <Text style={styles.sectionTitle}>METAS DE AHORRO</Text>
+            <Text style={styles.sectionActionText}>GESTIONAR</Text>
+          </View>
+
+          <View style={styles.goalCard}>
+            <View style={styles.goalHeaderRow}>
+              <View style={styles.goalInfoLeft}>
+                <View style={styles.goalIconCircle}>
+                  <Icon name="Laptop" size={18} color={colors.secondary} />
+                </View>
+                <View>
+                  <Text style={styles.goalTitle}>{summary?.activeGoal.title || 'Laptop para ciclo'}</Text>
+                  <Text style={styles.goalDeadline}>{summary?.activeGoal.deadlineText || 'Meta para marzo 2027'}</Text>
+                </View>
+              </View>
+              <View style={styles.goalAmountsRight}>
+                <Text style={styles.goalAmountText}>
+                  {summary?.activeGoal.formattedCurrent || 'S/ 120.00'}{' '}
+                  <Text style={styles.goalTargetText}>/ {summary?.activeGoal.formattedTarget || 'S/ 500.00'}</Text>
+                </Text>
+                <Text style={styles.goalPercentageBadge}>{summary?.activeGoal.percentage || 24}%</Text>
+              </View>
+            </View>
+
+            {/* Barra de progreso de la meta */}
+            <View style={styles.goalProgressTrack}>
+              <View
+                style={[
+                  styles.goalProgressFill,
+                  { width: `${summary?.activeGoal.percentage || 24}%` },
+                ]}
+              />
+            </View>
+          </View>
+        </View>
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: colors.bg,
+  },
+  container: {
+    padding: spacing.gutter,
+    paddingBottom: spacing.xxxl,
+    gap: spacing.base,
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingTop: spacing.xs,
+    marginBottom: spacing.xxs,
+  },
+  greeting: {
+    ...typography.titleMedium,
+    color: colors.ink,
+  },
+  campus: {
+    ...typography.bodySmall,
+    color: colors.ink3,
+  },
+  headerAction: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    backgroundColor: colors.surface,
+    borderColor: colors.line,
+    borderWidth: 1,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    borderRadius: radius.full,
+  },
+  statusDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: colors.secondary,
+  },
+  statusText: {
+    ...typography.monoSmall,
+    fontSize: 10,
+    color: colors.ink2,
+  },
+  balanceCard: {
+    backgroundColor: colors.surface,
+    borderColor: colors.line,
+    borderWidth: 1,
+    borderRadius: radius.lg,
+    padding: spacing.base,
+  },
+  balanceHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing.xs,
+  },
+  balanceLabel: {
+    ...typography.labelSmall,
+    color: colors.ink3,
+  },
+  balanceTrendBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: colors.surface2,
+    paddingHorizontal: spacing.xs,
+    paddingVertical: 2,
+    borderRadius: radius.full,
+  },
+  balanceTrendText: {
+    ...typography.monoSmall,
+    fontSize: 10,
+    color: colors.secondary,
+  },
+  balanceAmount: {
+    ...typography.amountLarge,
+    fontSize: 36,
+    lineHeight: 42,
+    color: colors.ink,
+  },
+  balanceFooter: {
+    marginTop: spacing.md,
+    paddingTop: spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: colors.line,
+  },
+  balanceFooterText: {
+    ...typography.bodySmall,
+    color: colors.ink3,
+  },
+  ctaRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  ctaCardHalf: {
+    flex: 1,
+    flexDirection: 'column',
+    alignItems: 'flex-start',
+    gap: spacing.xs,
+    backgroundColor: colors.surface2,
+    borderColor: colors.line,
+    borderWidth: 1,
+    borderRadius: radius.md,
+    padding: spacing.md,
+  },
+  ctaCardIncome: {
+    backgroundColor: colors.surface,
+  },
+  ctaIconExpense: {
+    width: 32,
+    height: 32,
+    borderRadius: radius.xs,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  ctaIconIncome: {
+    width: 32,
+    height: 32,
+    borderRadius: radius.xs,
+    backgroundColor: colors.secondary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  ctaHalfContent: {
+    marginTop: 2,
+  },
+  ctaHalfTitle: {
+    ...typography.titleSmall,
+    color: colors.ink,
+    fontSize: 13,
+  },
+  ctaHalfSubtitle: {
+    ...typography.bodySmall,
+    color: colors.ink3,
+    fontSize: 11,
+    marginTop: 2,
+  },
+  summaryGrid: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  summaryMetricCard: {
+    flex: 1,
+    backgroundColor: colors.surface,
+    borderColor: colors.line,
+    borderWidth: 1,
+    borderRadius: radius.md,
+    padding: spacing.md,
+  },
+  metricHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing.xs,
+  },
+  metricLabel: {
+    ...typography.labelSmall,
+    fontSize: 10,
+    color: colors.ink3,
+  },
+  metricAmount: {
+    ...typography.monoMedium,
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  projectionCard: {
+    backgroundColor: colors.surface,
+    borderColor: colors.line,
+    borderWidth: 1,
+    borderRadius: radius.md,
+    padding: spacing.base,
+    gap: spacing.xs,
+  },
+  projectionHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  projectionTitle: {
+    ...typography.labelSmall,
+    color: colors.ink3,
+  },
+  safeDailyBadge: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+  },
+  safeDailyAmount: {
+    ...typography.monoMedium,
+    color: colors.secondary,
+    fontWeight: '700',
+    fontSize: 14,
+  },
+  safeDailyUnit: {
+    ...typography.monoSmall,
+    fontSize: 11,
+    color: colors.ink3,
+  },
+  projectionSubRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 2,
+  },
+  projectionDaysText: {
+    ...typography.bodySmall,
+    color: colors.ink2,
+  },
+  projectionLabelBadge: {
+    ...typography.monoSmall,
+    fontSize: 9,
+    letterSpacing: 0.8,
+    color: colors.ink3,
+    textTransform: 'uppercase',
+  },
+  cycleProgressTrack: {
+    width: '100%',
+    height: 5,
+    backgroundColor: colors.surface2,
+    borderRadius: radius.full,
+    overflow: 'hidden',
+    marginTop: spacing.xs,
+  },
+  cycleProgressFill: {
+    height: '100%',
+    backgroundColor: colors.secondary,
+    borderRadius: radius.full,
+  },
+  cycleElapsedText: {
+    ...typography.monoSmall,
+    fontSize: 10,
+    color: colors.ink3,
+    marginTop: 2,
+  },
+  section: {
+    gap: spacing.xs,
+  },
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing.xxs,
+  },
+  sectionTitle: {
+    ...typography.labelSmall,
+    color: colors.ink3,
+  },
+  sectionHint: {
+    ...typography.monoSmall,
+    fontSize: 10,
+    color: colors.ink3,
+  },
+  sectionActionText: {
+    ...typography.monoSmall,
+    fontSize: 10,
+    color: colors.secondary,
+    fontWeight: '600',
+  },
+  emptyCard: {
+    backgroundColor: colors.surface,
+    borderColor: colors.line,
+    borderWidth: 1,
+    borderRadius: radius.md,
+    padding: spacing.xl,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xs,
+  },
+  emptyText: {
+    ...typography.bodySmall,
+    color: colors.ink3,
+  },
+  categoryExpensesCard: {
+    backgroundColor: colors.surface,
+    borderColor: colors.line,
+    borderWidth: 1,
+    borderRadius: radius.md,
+    padding: spacing.base,
+    gap: spacing.md,
+  },
+  categoryExpenseRow: {
+    gap: spacing.xs,
+  },
+  categoryRowBorder: {
+    paddingBottom: spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.line,
+  },
+  catRowHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  catIconAndTitle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    flex: 1,
+  },
+  catIconCircle: {
+    width: 28,
+    height: 28,
+    borderRadius: radius.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  catNameText: {
+    ...typography.bodyMedium,
+    color: colors.ink,
+    fontWeight: '500',
+    flex: 1,
+  },
+  catAmounts: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  catAmountText: {
+    ...typography.monoMedium,
+    fontSize: 13,
+    color: colors.ink,
+    fontWeight: '600',
+  },
+  catPercentageText: {
+    ...typography.monoSmall,
+    fontSize: 11,
+    color: colors.ink3,
+    width: 32,
+    textAlign: 'right',
+  },
+  catProgressBarTrack: {
+    width: '100%',
+    height: 4,
+    backgroundColor: colors.surface2,
+    borderRadius: radius.full,
+    overflow: 'hidden',
+  },
+  catProgressBarFill: {
+    height: '100%',
+    borderRadius: radius.full,
+  },
+  goalCard: {
+    backgroundColor: colors.surface,
+    borderColor: colors.line,
+    borderWidth: 1,
+    borderRadius: radius.md,
+    padding: spacing.base,
+    gap: spacing.sm,
+  },
+  goalHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  goalInfoLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    flex: 1,
+  },
+  goalIconCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: radius.sm,
+    backgroundColor: colors.surface2,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  goalTitle: {
+    ...typography.titleSmall,
+    fontSize: 13,
+    color: colors.ink,
+  },
+  goalDeadline: {
+    ...typography.monoSmall,
+    fontSize: 10,
+    color: colors.ink3,
+    marginTop: 2,
+  },
+  goalAmountsRight: {
+    alignItems: 'flex-end',
+  },
+  goalAmountText: {
+    ...typography.monoMedium,
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.ink,
+  },
+  goalTargetText: {
+    color: colors.ink3,
+    fontWeight: '400',
+  },
+  goalPercentageBadge: {
+    ...typography.monoSmall,
+    fontSize: 10,
+    color: colors.secondary,
+    fontWeight: '700',
+    marginTop: 2,
+  },
+  goalProgressTrack: {
+    width: '100%',
+    height: 5,
+    backgroundColor: colors.surface2,
+    borderRadius: radius.full,
+    overflow: 'hidden',
+  },
+  goalProgressFill: {
+    height: '100%',
+    backgroundColor: colors.secondary,
+    borderRadius: radius.full,
+  },
+});
+```
+
 ### `apps/mobile/src/features/transactions/index.ts`
 
 ```typescript
 /**
  * Feature: Transactions
- * Módulo responsable de registrar y persistir transacciones financieras (RF-002)
- * y de re-categorizar movimientos existentes (RF-004).
+ * Módulo responsable de registrar y persistir transacciones financieras (RF-002),
+ * de re-categorizar movimientos existentes (RF-004) y de consultar el historial
+ * con filtros combinados y paginación (RF-009).
  */
 
 export * from './domain/types';
+export * from './domain/history';
+export * from './domain/errors';
 export * from './data/transactions.repository';
 export * from './ui/NewExpenseScreen';
 export * from './ui/NewIncomeScreen';
 export * from './ui/EditTransactionCategoryModal';
-
+export * from './ui/HistoryFiltersModal';
+export * from './ui/HistoryScreen';
+export * from './ui/useHistoryPagination';
 ```
 
 ### `apps/mobile/src/features/transactions/data/transactions.repository.ts`
 
 ```typescript
 import * as Crypto from 'expo-crypto';
-import { eq, and, isNull, desc } from 'drizzle-orm';
+import { eq, and, isNull, desc, asc, gte, lte, lt, gt, or, sql, SQL } from 'drizzle-orm';
 import {
   db,
   transactions,
   merchants,
   profile,
   Transaction,
+  Merchant,
   enqueueOutbox,
   centsToPostgresAmount,
 } from '@/core/db';
@@ -52678,6 +52428,102 @@ import {
   CreateIncomeInput,
   createIncomeSchema,
 } from '../domain/types';
+import {
+  DEFAULT_HISTORY_PAGE_SIZE,
+  EMPTY_HISTORY_PAGE,
+  HistoryFilters,
+  HistoryItem,
+  HistoryOrder,
+  HistoryPage,
+  HistoryQueryOptions,
+  HistoryTotals,
+  NormalizedHistoryFilters,
+  decodeHistoryCursor,
+  encodeHistoryCursor,
+  historyFiltersSchema,
+  normalizeHistoryLimit,
+  normalizeHistorySearchTerm,
+  toHistoryFilterError,
+} from '../domain/history';
+
+/**
+ * Construye la condición keyset equivalente a "viene después del cursor" para
+ * el orden cronológico solicitado. La tupla (occurred_on, created_at, id)
+ * replica exactamente el criterio de orden, por lo que la paginación es estable
+ * aunque se inserten movimientos nuevos entre páginas (a diferencia de OFFSET).
+ */
+function buildHistoryKeysetCondition(
+  order: HistoryOrder,
+  cursor: { occurredOn: string; createdAt: string; id: string }
+): SQL {
+  const isAsc = order === 'date_asc';
+  const sameDate = eq(transactions.occurredOn, cursor.occurredOn);
+  const sameCreated = eq(transactions.createdAt, cursor.createdAt);
+
+  if (isAsc) {
+    return or(
+      gt(transactions.occurredOn, cursor.occurredOn),
+      and(sameDate, gt(transactions.createdAt, cursor.createdAt)),
+      and(sameDate, sameCreated, gt(transactions.id, cursor.id))
+    ) as SQL;
+  }
+
+  return or(
+    lt(transactions.occurredOn, cursor.occurredOn),
+    and(sameDate, lt(transactions.createdAt, cursor.createdAt)),
+    and(sameDate, sameCreated, lt(transactions.id, cursor.id))
+  ) as SQL;
+}
+
+/**
+ * Condición SQL para filtrar por nombre de establecimiento. Se resuelve con una
+ * subconsulta (no un JOIN) para no duplicar filas ni complicar las sumas
+ * agregadas del historial.
+ */
+function buildMerchantNameCondition(userId: string, term: string): SQL {
+  const pattern = `%${term}%`;
+  return sql`${transactions.merchantId} IN (
+    SELECT ${merchants.id} FROM ${merchants}
+    WHERE ${merchants.userId} = ${userId}
+      AND ${merchants.deletedAt} IS NULL
+      AND lower(${merchants.name}) LIKE ${pattern}
+  )`;
+}
+
+/**
+ * Búsqueda libre del historial: coincide con la nota, la fuente del ingreso o
+ * el nombre del establecimiento (búsqueda "por comercio" de RF-009).
+ */
+function buildHistoryTextCondition(userId: string, term: string): SQL {
+  const pattern = `%${term}%`;
+  return sql`(
+    lower(coalesce(${transactions.note}, '')) LIKE ${pattern}
+    OR lower(coalesce(${transactions.source}, '')) LIKE ${pattern}
+    OR ${buildMerchantNameCondition(userId, term)}
+  )`;
+}
+
+/** Enriquece las filas de movimientos con su categoría y establecimiento. */
+function enrichHistoryItems(userId: string, rows: Transaction[]): HistoryItem[] {
+  if (rows.length === 0) return [];
+
+  // Catálogos pequeños y por usuario: se resuelven en memoria para evitar N+1.
+  const categoryMap = new Map(
+    categoriesRepository.getByUser(userId).map((category) => [category.id, category])
+  );
+  const merchantRows = db
+    .select()
+    .from(merchants)
+    .where(eq(merchants.userId, userId))
+    .all();
+  const merchantMap = new Map(merchantRows.map((merchant) => [merchant.id, merchant]));
+
+  return rows.map((row) => ({
+    ...row,
+    category: categoryMap.get(row.categoryId) ?? null,
+    merchant: row.merchantId ? merchantMap.get(row.merchantId) ?? null : null,
+  }));
+}
 
 export const transactionsRepository = {
   /**
@@ -52935,6 +52781,127 @@ export const transactionsRepository = {
   },
 
   /**
+   * Consulta el historial de movimientos con filtros dinámicos combinables y
+   * paginación keyset (RF-009 / HU-05).
+   *
+   * - Listado estrictamente cronológico: `occurred_on`, `created_at` e `id`
+   *   (desempate estable) en el orden solicitado.
+   * - Filtros aditivos (AND): rango de fechas, categoría, tipo, rango de monto,
+   *   establecimiento exacto o por nombre y texto libre (nota/fuente/comercio).
+   * - Solo movimientos activos (`deleted_at IS NULL`) del usuario autenticado
+   *   (aislamiento RNF-005).
+   * - `total` y `totals` describen el conjunto filtrado completo, no la página.
+   *
+   * Lanza `HistoryQueryError` ('INVALID_FILTER' | 'INVALID_CURSOR') ante
+   * parámetros inválidos, y la UI traduce el código a un mensaje legible.
+   */
+  searchHistory(
+    userId: string,
+    filters: HistoryFilters = {},
+    options: HistoryQueryOptions = {}
+  ): HistoryPage {
+    // 1. Validar el contrato de filtros (fechas y rangos de monto)
+    let parsed: NormalizedHistoryFilters;
+    try {
+      parsed = historyFiltersSchema.parse(filters);
+    } catch (error) {
+      throw toHistoryFilterError(error);
+    }
+
+    // 2. Resolver paginación (cursor opaco + tope de página)
+    const limit = normalizeHistoryLimit(options.limit ?? DEFAULT_HISTORY_PAGE_SIZE);
+    const cursor = options.cursor ? decodeHistoryCursor(options.cursor) : null;
+
+    // 3. Componer las condiciones dinámicas
+    const conditions: SQL[] = [
+      eq(transactions.userId, userId),
+      isNull(transactions.deletedAt),
+    ];
+
+    if (parsed.type) conditions.push(eq(transactions.type, parsed.type));
+    if (parsed.from) conditions.push(gte(transactions.occurredOn, parsed.from));
+    if (parsed.to) conditions.push(lte(transactions.occurredOn, parsed.to));
+    if (parsed.categoryId) conditions.push(eq(transactions.categoryId, parsed.categoryId));
+    if (parsed.merchantId) conditions.push(eq(transactions.merchantId, parsed.merchantId));
+    if (parsed.minAmountCents !== undefined) {
+      conditions.push(gte(transactions.amountCents, parsed.minAmountCents));
+    }
+    if (parsed.maxAmountCents !== undefined) {
+      conditions.push(lte(transactions.amountCents, parsed.maxAmountCents));
+    }
+
+    const merchantTerm = normalizeHistorySearchTerm(parsed.merchantQuery);
+    if (merchantTerm) conditions.push(buildMerchantNameCondition(userId, merchantTerm));
+
+    const searchTerm = normalizeHistorySearchTerm(parsed.search);
+    if (searchTerm) conditions.push(buildHistoryTextCondition(userId, searchTerm));
+
+    // 4. Agregados del conjunto filtrado completo (total y saldos)
+    const aggregate = db
+      .select({
+        total: sql<number>`count(*)`,
+        incomeCents: sql<number>`coalesce(sum(case when ${transactions.type} = 'income' then ${transactions.amountCents} else 0 end), 0)`,
+        expenseCents: sql<number>`coalesce(sum(case when ${transactions.type} = 'expense' then ${transactions.amountCents} else 0 end), 0)`,
+      })
+      .from(transactions)
+      .where(and(...conditions))
+      .get();
+
+    const totals: HistoryTotals = {
+      incomeCents: aggregate?.incomeCents ?? 0,
+      expenseCents: aggregate?.expenseCents ?? 0,
+      netCents: (aggregate?.incomeCents ?? 0) - (aggregate?.expenseCents ?? 0),
+    };
+    const total = aggregate?.total ?? 0;
+
+    if (total === 0) {
+      return { ...EMPTY_HISTORY_PAGE, items: [], totals };
+    }
+
+    // 5. Página: se pide un registro extra para saber si hay más sin COUNT extra
+    const pageConditions = [...conditions];
+    if (cursor) pageConditions.push(buildHistoryKeysetCondition(parsed.order, cursor));
+
+    const orderBy =
+      parsed.order === 'date_asc'
+        ? [asc(transactions.occurredOn), asc(transactions.createdAt), asc(transactions.id)]
+        : [desc(transactions.occurredOn), desc(transactions.createdAt), desc(transactions.id)];
+
+    const rows = db
+      .select()
+      .from(transactions)
+      .where(and(...pageConditions))
+      .orderBy(...orderBy)
+      .limit(limit + 1)
+      .all();
+
+    const hasMore = rows.length > limit;
+    const pageRows = hasMore ? rows.slice(0, limit) : rows;
+    const lastRow = pageRows[pageRows.length - 1];
+
+    return {
+      items: enrichHistoryItems(userId, pageRows),
+      nextCursor: hasMore && lastRow ? encodeHistoryCursor(lastRow) : null,
+      hasMore,
+      total,
+      totals,
+    };
+  },
+
+  /**
+   * Establecimientos activos del usuario, ordenados alfabéticamente. Alimenta
+   * los chips del filtro "Establecimiento" del historial (Escenario 1 de HU-05).
+   */
+  getMerchantOptions(userId: string): Merchant[] {
+    return db
+      .select()
+      .from(merchants)
+      .where(and(eq(merchants.userId, userId), isNull(merchants.deletedAt)))
+      .orderBy(asc(merchants.name))
+      .all();
+  },
+
+  /**
    * Obtiene una transacción activa por id, asegurando que pertenezca al
    * usuario (aislamiento RNF-005). Devuelve `null` si no existe.
    */
@@ -53015,6 +52982,569 @@ export const transactionsRepository = {
     return updated;
   },
 };
+```
+
+### `apps/mobile/src/features/transactions/data/__tests__/transactions.history.test.ts`
+
+```typescript
+/**
+ * Pruebas de integración de la consulta del historial de movimientos
+ * (RF-009 / HU-05): orden cronológico, filtros combinados, búsqueda por
+ * establecimiento, totales y paginación keyset sobre SQLite en memoria.
+ */
+import { db, transactions, Transaction } from '@/core/db';
+import { eq } from 'drizzle-orm';
+import { DEV_USER_ID } from '@/core/dev/constants';
+import { resetDatabase, countRows, OTHER_USER_ID } from '../../../../../test/helpers/test-db';
+import { categoriesRepository } from '../../../categories/data/categories.repository';
+import { HistoryQueryError } from '../../domain/errors';
+import { transactionsRepository } from '../transactions.repository';
+
+/** Reloj lógico: garantiza `created_at` crecientes y deterministas en los tests. */
+let clock = 0;
+
+function nextTimestamp(): string {
+  clock += 1;
+  return `2026-10-01T10:${String(Math.floor(clock / 60)).padStart(2, '0')}:${String(
+    clock % 60
+  ).padStart(2, '0')}.000Z`;
+}
+
+function expenseCategory(name: string): string {
+  return categoriesRepository.create(DEV_USER_ID, {
+    name,
+    type: 'expense',
+    icon: 'Tag',
+    color: '#64748B',
+  }).id;
+}
+
+function incomeCategory(name: string): string {
+  return categoriesRepository.create(DEV_USER_ID, {
+    name,
+    type: 'income',
+    icon: 'Coins',
+    color: '#10B981',
+  }).id;
+}
+
+interface SeedParams {
+  occurredOn: string;
+  amountCents: number;
+  categoryId: string;
+  merchantId?: string | null;
+  note?: string | null;
+  userId?: string;
+}
+
+/** Inserta un gasto con `created_at` controlado (para orden y paginación). */
+function seedExpense(params: SeedParams): Transaction {
+  const now = nextTimestamp();
+  const tx: Transaction = {
+    id: `tx-exp-${clock}`,
+    userId: params.userId ?? DEV_USER_ID,
+    type: 'expense',
+    amountCents: params.amountCents,
+    occurredOn: params.occurredOn,
+    categoryId: params.categoryId,
+    merchantId: params.merchantId ?? null,
+    paymentMethod: 'cash',
+    source: null,
+    note: params.note ?? null,
+    entryMethod: 'manual',
+    createdAt: now,
+    clientUpdatedAt: now,
+    updatedAt: null,
+    deletedAt: null,
+  };
+  db.insert(transactions).values(tx).run();
+  return tx;
+}
+
+/** Inserta un ingreso con `created_at` controlado. */
+function seedIncome(params: SeedParams & { source: string }): Transaction {
+  const now = nextTimestamp();
+  const tx: Transaction = {
+    id: `tx-inc-${clock}`,
+    userId: params.userId ?? DEV_USER_ID,
+    type: 'income',
+    amountCents: params.amountCents,
+    occurredOn: params.occurredOn,
+    categoryId: params.categoryId,
+    merchantId: null,
+    paymentMethod: null,
+    source: params.source,
+    note: params.note ?? null,
+    entryMethod: 'manual',
+    createdAt: now,
+    clientUpdatedAt: now,
+    updatedAt: null,
+    deletedAt: null,
+  };
+  db.insert(transactions).values(tx).run();
+  return tx;
+}
+
+beforeEach(() => {
+  clock = 0;
+  resetDatabase();
+  jest.spyOn(console, 'info').mockImplementation(() => {});
+});
+
+afterEach(() => {
+  jest.restoreAllMocks();
+});
+
+describe('searchHistory: listado cronológico (RF-009)', () => {
+  it('ordena de más reciente a más antiguo por fecha de ocurrencia', () => {
+    const cat = expenseCategory('Orden');
+
+    seedExpense({ occurredOn: '2026-10-01', amountCents: 1000, categoryId: cat });
+    seedExpense({ occurredOn: '2026-10-05', amountCents: 2000, categoryId: cat });
+    seedExpense({ occurredOn: '2026-10-03', amountCents: 3000, categoryId: cat });
+
+    const page = transactionsRepository.searchHistory(DEV_USER_ID);
+
+    expect(page.items.map((item) => item.occurredOn)).toEqual([
+      '2026-10-05',
+      '2026-10-03',
+      '2026-10-01',
+    ]);
+    expect(page.total).toBe(3);
+    expect(page.hasMore).toBe(false);
+    expect(page.nextCursor).toBeNull();
+  });
+
+  it('desempata por created_at descendente cuando comparten fecha', () => {
+    const cat = expenseCategory('Mismo día');
+
+    const first = seedExpense({ occurredOn: '2026-10-02', amountCents: 1000, categoryId: cat });
+    const second = seedExpense({ occurredOn: '2026-10-02', amountCents: 2000, categoryId: cat });
+    const third = seedExpense({ occurredOn: '2026-10-02', amountCents: 3000, categoryId: cat });
+
+    const page = transactionsRepository.searchHistory(DEV_USER_ID);
+
+    expect(page.items.map((item) => item.id)).toEqual([third.id, second.id, first.id]);
+  });
+
+  it('soporta orden cronológico ascendente (más antiguo primero)', () => {
+    const cat = expenseCategory('Ascendente');
+
+    seedExpense({ occurredOn: '2026-10-01', amountCents: 1000, categoryId: cat });
+    seedExpense({ occurredOn: '2026-10-05', amountCents: 2000, categoryId: cat });
+    seedExpense({ occurredOn: '2026-10-03', amountCents: 3000, categoryId: cat });
+
+    const page = transactionsRepository.searchHistory(DEV_USER_ID, { order: 'date_asc' });
+
+    expect(page.items.map((item) => item.occurredOn)).toEqual([
+      '2026-10-01',
+      '2026-10-03',
+      '2026-10-05',
+    ]);
+  });
+
+  it('enriquece cada movimiento con su categoría y establecimiento', () => {
+    const cat = expenseCategory('Enriquecida');
+    transactionsRepository.createExpense(DEV_USER_ID, {
+      amountCents: 1500,
+      occurredOn: '2026-10-04',
+      categoryId: cat,
+      merchantName: 'Menú UNSA',
+      paymentMethod: 'digital',
+    });
+
+    const page = transactionsRepository.searchHistory(DEV_USER_ID);
+
+    expect(page.items).toHaveLength(1);
+    expect(page.items[0].category?.name).toBe('Enriquecida');
+    expect(page.items[0].merchant?.name).toBe('Menú UNSA');
+  });
+});
+
+describe('searchHistory: filtros dinámicos (RF-009 / HU-05)', () => {
+  it('filtra por rango de fechas inclusivo en ambos extremos', () => {
+    const cat = expenseCategory('Fechas');
+
+    seedExpense({ occurredOn: '2026-10-01', amountCents: 1000, categoryId: cat });
+    seedExpense({ occurredOn: '2026-10-02', amountCents: 2000, categoryId: cat });
+    seedExpense({ occurredOn: '2026-10-04', amountCents: 3000, categoryId: cat });
+    seedExpense({ occurredOn: '2026-10-09', amountCents: 4000, categoryId: cat });
+
+    const page = transactionsRepository.searchHistory(DEV_USER_ID, {
+      from: '2026-10-02',
+      to: '2026-10-04',
+    });
+
+    expect(page.items.map((item) => item.occurredOn)).toEqual(['2026-10-04', '2026-10-02']);
+    expect(page.total).toBe(2);
+    expect(page.totals.expenseCents).toBe(5000);
+  });
+
+  it('filtra por tipo de movimiento (ingreso o gasto)', () => {
+    const catExpense = expenseCategory('Tipo gasto');
+    const catIncome = incomeCategory('Tipo ingreso');
+
+    seedExpense({ occurredOn: '2026-10-01', amountCents: 1000, categoryId: catExpense });
+    seedIncome({
+      occurredOn: '2026-10-02',
+      amountCents: 5000,
+      categoryId: catIncome,
+      source: 'Freelance',
+    });
+
+    const onlyIncome = transactionsRepository.searchHistory(DEV_USER_ID, { type: 'income' });
+    expect(onlyIncome.items).toHaveLength(1);
+    expect(onlyIncome.items[0].type).toBe('income');
+    expect(onlyIncome.totals).toEqual({ incomeCents: 5000, expenseCents: 0, netCents: 5000 });
+
+    const onlyExpense = transactionsRepository.searchHistory(DEV_USER_ID, { type: 'expense' });
+    expect(onlyExpense.items).toHaveLength(1);
+    expect(onlyExpense.items[0].type).toBe('expense');
+  });
+
+  it('filtra por categoría', () => {
+    const catA = expenseCategory('Comida');
+    const catB = expenseCategory('Transporte Urbano');
+
+    seedExpense({ occurredOn: '2026-10-01', amountCents: 1000, categoryId: catA });
+    seedExpense({ occurredOn: '2026-10-02', amountCents: 2000, categoryId: catB });
+
+    const page = transactionsRepository.searchHistory(DEV_USER_ID, { categoryId: catB });
+
+    expect(page.items).toHaveLength(1);
+    expect(page.items[0].categoryId).toBe(catB);
+    expect(page.items[0].category?.name).toBe('Transporte Urbano');
+  });
+
+  it('filtra por un establecimiento específico (Escenario 1 de HU-05)', () => {
+    const cat = expenseCategory('Establecimientos');
+
+    transactionsRepository.createExpense(DEV_USER_ID, {
+      amountCents: 1500,
+      occurredOn: '2026-10-01',
+      categoryId: cat,
+      merchantName: 'Menú UNSA',
+      paymentMethod: 'cash',
+    });
+    transactionsRepository.createExpense(DEV_USER_ID, {
+      amountCents: 700,
+      occurredOn: '2026-10-02',
+      categoryId: cat,
+      merchantName: 'Fotocopias Central',
+      paymentMethod: 'cash',
+    });
+
+    const merchants = transactionsRepository.getMerchantOptions(DEV_USER_ID);
+    expect(merchants.map((m) => m.name)).toEqual(['Fotocopias Central', 'Menú UNSA']);
+
+    const target = merchants.find((m) => m.name === 'Menú UNSA');
+    const page = transactionsRepository.searchHistory(DEV_USER_ID, { merchantId: target?.id });
+
+    expect(page.total).toBe(1);
+    expect(page.items).toHaveLength(1);
+    expect(page.items[0].merchant?.name).toBe('Menú UNSA');
+    expect(page.totals.expenseCents).toBe(1500);
+  });
+
+  it('filtra por nombre de establecimiento sin distinguir mayúsculas', () => {
+    const cat = expenseCategory('Búsqueda comercio');
+
+    transactionsRepository.createExpense(DEV_USER_ID, {
+      amountCents: 1500,
+      occurredOn: '2026-10-01',
+      categoryId: cat,
+      merchantName: 'Menú UNSA',
+      paymentMethod: 'cash',
+    });
+    transactionsRepository.createExpense(DEV_USER_ID, {
+      amountCents: 900,
+      occurredOn: '2026-10-02',
+      categoryId: cat,
+      merchantName: 'Tambo+',
+      paymentMethod: 'cash',
+    });
+
+    const page = transactionsRepository.searchHistory(DEV_USER_ID, { merchantQuery: 'tambo' });
+
+    expect(page.total).toBe(1);
+    expect(page.items[0].merchant?.name).toBe('Tambo+');
+  });
+
+  it('busca texto libre en nota, fuente y establecimiento', () => {
+    const catExpense = expenseCategory('Texto gasto');
+    const catIncome = incomeCategory('Texto ingreso');
+
+    transactionsRepository.createExpense(DEV_USER_ID, {
+      amountCents: 1200,
+      occurredOn: '2026-10-01',
+      categoryId: catExpense,
+      merchantName: 'Fotocopias Central',
+      paymentMethod: 'cash',
+      note: 'Impresión de apuntes',
+    });
+    seedIncome({
+      occurredOn: '2026-10-02',
+      amountCents: 5000,
+      categoryId: catIncome,
+      source: 'Propina mensual',
+      note: 'Apoyo de mamá',
+    });
+
+    const byMerchant = transactionsRepository.searchHistory(DEV_USER_ID, { search: 'fotocopias' });
+    expect(byMerchant.total).toBe(1);
+    expect(byMerchant.items[0].type).toBe('expense');
+
+    const bySource = transactionsRepository.searchHistory(DEV_USER_ID, { search: 'propina' });
+    expect(bySource.total).toBe(1);
+    expect(bySource.items[0].type).toBe('income');
+
+    const byNote = transactionsRepository.searchHistory(DEV_USER_ID, { search: 'apuntes' });
+    expect(byNote.total).toBe(1);
+    expect(byNote.items[0].type).toBe('expense');
+  });
+
+  it('filtra por rango de monto en céntimos', () => {
+    const cat = expenseCategory('Montos');
+
+    seedExpense({ occurredOn: '2026-10-01', amountCents: 500, categoryId: cat });
+    seedExpense({ occurredOn: '2026-10-02', amountCents: 2500, categoryId: cat });
+    seedExpense({ occurredOn: '2026-10-03', amountCents: 9000, categoryId: cat });
+
+    const page = transactionsRepository.searchHistory(DEV_USER_ID, {
+      minAmountCents: 1000,
+      maxAmountCents: 5000,
+    });
+
+    expect(page.items).toHaveLength(1);
+    expect(page.items[0].amountCents).toBe(2500);
+  });
+
+  it('combina varios filtros a la vez (fecha + categoría + tipo)', () => {
+    const catComida = expenseCategory('Combinada comida');
+    const catTransporte = expenseCategory('Combinada transporte');
+    const catIngreso = incomeCategory('Combinada ingreso');
+
+    seedExpense({ occurredOn: '2026-10-01', amountCents: 1000, categoryId: catComida });
+    seedExpense({ occurredOn: '2026-10-05', amountCents: 2000, categoryId: catComida });
+    seedExpense({ occurredOn: '2026-10-05', amountCents: 3000, categoryId: catTransporte });
+    seedIncome({
+      occurredOn: '2026-10-05',
+      amountCents: 4000,
+      categoryId: catIngreso,
+      source: 'Extra',
+    });
+
+    const page = transactionsRepository.searchHistory(DEV_USER_ID, {
+      type: 'expense',
+      categoryId: catComida,
+      from: '2026-10-02',
+      to: '2026-10-31',
+    });
+
+    expect(page.total).toBe(1);
+    expect(page.items[0].amountCents).toBe(2000);
+    expect(page.items[0].categoryId).toBe(catComida);
+  });
+
+  it('excluye movimientos soft-deleted y de otros usuarios (RNF-005)', () => {
+    const cat = expenseCategory('Aislamiento');
+
+    const active = seedExpense({ occurredOn: '2026-10-01', amountCents: 1000, categoryId: cat });
+    const deleted = seedExpense({ occurredOn: '2026-10-02', amountCents: 2000, categoryId: cat });
+    seedExpense({
+      occurredOn: '2026-10-03',
+      amountCents: 3000,
+      categoryId: cat,
+      userId: OTHER_USER_ID,
+    });
+
+    db.update(transactions)
+      .set({ deletedAt: '2026-10-03T00:00:00.000Z' })
+      .where(eq(transactions.id, deleted.id))
+      .run();
+
+    const page = transactionsRepository.searchHistory(DEV_USER_ID);
+
+    expect(page.total).toBe(1);
+    expect(page.items.map((item) => item.id)).toEqual([active.id]);
+  });
+
+  it('devuelve una página vacía con totales en cero cuando no hay coincidencias', () => {
+    const cat = expenseCategory('Sin resultados');
+    seedExpense({ occurredOn: '2026-10-01', amountCents: 1000, categoryId: cat });
+
+    const page = transactionsRepository.searchHistory(DEV_USER_ID, { search: 'inexistente' });
+
+    expect(page.items).toHaveLength(0);
+    expect(page.total).toBe(0);
+    expect(page.hasMore).toBe(false);
+    expect(page.nextCursor).toBeNull();
+    expect(page.totals).toEqual({ incomeCents: 0, expenseCents: 0, netCents: 0 });
+  });
+
+  it('calcula los totales sobre todo el conjunto filtrado, no solo la página', () => {
+    const catExpense = expenseCategory('Totales gasto');
+    const catIncome = incomeCategory('Totales ingreso');
+
+    for (let i = 1; i <= 5; i += 1) {
+      const day = String(i).padStart(2, '0');
+      seedExpense({ occurredOn: `2026-10-${day}`, amountCents: 1000, categoryId: catExpense });
+    }
+    seedIncome({
+      occurredOn: '2026-10-06',
+      amountCents: 7000,
+      categoryId: catIncome,
+      source: 'Sueldo',
+    });
+
+    const page = transactionsRepository.searchHistory(DEV_USER_ID, {}, { limit: 2 });
+
+    expect(page.items).toHaveLength(2);
+    expect(page.total).toBe(6);
+    expect(page.totals).toEqual({ incomeCents: 7000, expenseCents: 5000, netCents: 2000 });
+  });
+});
+
+describe('searchHistory: paginación keyset (RF-009)', () => {
+  it('recorre el historial en páginas sin duplicados ni saltos', () => {
+    const cat = expenseCategory('Paginada');
+
+    for (let i = 1; i <= 5; i += 1) {
+      const day = String(i).padStart(2, '0');
+      seedExpense({ occurredOn: `2026-10-${day}`, amountCents: i * 100, categoryId: cat });
+    }
+
+    const first = transactionsRepository.searchHistory(DEV_USER_ID, {}, { limit: 2 });
+    expect(first.items).toHaveLength(2);
+    expect(first.hasMore).toBe(true);
+    expect(first.nextCursor).not.toBeNull();
+    expect(first.total).toBe(5);
+
+    const second = transactionsRepository.searchHistory(
+      DEV_USER_ID,
+      {},
+      { limit: 2, cursor: first.nextCursor }
+    );
+    expect(second.items).toHaveLength(2);
+    expect(second.hasMore).toBe(true);
+
+    const third = transactionsRepository.searchHistory(
+      DEV_USER_ID,
+      {},
+      { limit: 2, cursor: second.nextCursor }
+    );
+    expect(third.items).toHaveLength(1);
+    expect(third.hasMore).toBe(false);
+    expect(third.nextCursor).toBeNull();
+
+    const ids = [...first.items, ...second.items, ...third.items].map((item) => item.id);
+    expect(new Set(ids).size).toBe(5);
+    expect(ids).toEqual([
+      'tx-exp-5',
+      'tx-exp-4',
+      'tx-exp-3',
+      'tx-exp-2',
+      'tx-exp-1',
+    ]);
+  });
+
+  it('pagina correctamente en orden ascendente', () => {
+    const cat = expenseCategory('Paginada asc');
+
+    for (let i = 1; i <= 3; i += 1) {
+      const day = String(i).padStart(2, '0');
+      seedExpense({ occurredOn: `2026-10-${day}`, amountCents: i * 100, categoryId: cat });
+    }
+
+    const first = transactionsRepository.searchHistory(
+      DEV_USER_ID,
+      { order: 'date_asc' },
+      { limit: 2 }
+    );
+    const second = transactionsRepository.searchHistory(
+      DEV_USER_ID,
+      { order: 'date_asc' },
+      { limit: 2, cursor: first.nextCursor }
+    );
+
+    expect([...first.items, ...second.items].map((item) => item.occurredOn)).toEqual([
+      '2026-10-01',
+      '2026-10-02',
+      '2026-10-03',
+    ]);
+  });
+
+  it('mantiene la paginación estable cuando se insertan movimientos nuevos', () => {
+    const cat = expenseCategory('Estable');
+
+    for (let i = 1; i <= 4; i += 1) {
+      const day = String(i).padStart(2, '0');
+      seedExpense({ occurredOn: `2026-10-${day}`, amountCents: i * 100, categoryId: cat });
+    }
+
+    const first = transactionsRepository.searchHistory(DEV_USER_ID, {}, { limit: 2 });
+
+    // Un movimiento nuevo (más reciente) no debe desplazar la página siguiente.
+    seedExpense({ occurredOn: '2026-10-10', amountCents: 999, categoryId: cat });
+
+    const second = transactionsRepository.searchHistory(
+      DEV_USER_ID,
+      {},
+      { limit: 2, cursor: first.nextCursor }
+    );
+
+    expect(second.items.map((item) => item.occurredOn)).toEqual(['2026-10-02', '2026-10-01']);
+  });
+});
+
+describe('searchHistory: validación de parámetros (RF-009)', () => {
+  it('rechaza un rango de fechas invertido', () => {
+    expect(() =>
+      transactionsRepository.searchHistory(DEV_USER_ID, { from: '2026-10-10', to: '2026-10-01' })
+    ).toThrowError(expect.objectContaining({ code: 'INVALID_FILTER' }));
+  });
+
+  it('rechaza fechas con formato inválido', () => {
+    expect(() =>
+      transactionsRepository.searchHistory(DEV_USER_ID, { from: '10/10/2026' })
+    ).toThrowError(expect.objectContaining({ code: 'INVALID_FILTER' }));
+  });
+
+  it('rechaza un rango de montos invertido', () => {
+    expect(() =>
+      transactionsRepository.searchHistory(DEV_USER_ID, {
+        minAmountCents: 5000,
+        maxAmountCents: 1000,
+      })
+    ).toThrowError(expect.objectContaining({ code: 'INVALID_FILTER' }));
+  });
+
+  it('rechaza un cursor de paginación corrupto', () => {
+    let thrown: HistoryQueryError | null = null;
+    try {
+      transactionsRepository.searchHistory(DEV_USER_ID, {}, { cursor: 'cursor-invalido' });
+    } catch (error) {
+      thrown = error as HistoryQueryError;
+    }
+
+    expect(thrown?.code).toBe('INVALID_CURSOR');
+    expect(thrown?.message).toContain('paginación');
+  });
+
+  it('no escribe nada en la base de datos al validar los filtros', () => {
+    const cat = expenseCategory('Solo lectura');
+    seedExpense({ occurredOn: '2026-10-01', amountCents: 1000, categoryId: cat });
+    const before = countRows('transactions');
+
+    try {
+      transactionsRepository.searchHistory(DEV_USER_ID, { from: 'mal-formato' });
+    } catch {
+      // esperado
+    }
+
+    expect(countRows('transactions')).toBe(before);
+  });
+});
 ```
 
 ### `apps/mobile/src/features/transactions/data/__tests__/transactions.income.test.ts`
@@ -53516,6 +54046,336 @@ describe('flujo integrado RF-004 + RF-005 (reasignación libera la categoría)',
 });
 ```
 
+### `apps/mobile/src/features/transactions/domain/errors.ts`
+
+```typescript
+/**
+ * AhorRaso - Errores de dominio del feature Transactions (RF-009)
+ *
+ * Dominio puro (sin React ni SQLite): el repositorio lanza `HistoryQueryError`
+ * con un código estable y la UI traduce ese código a un mensaje comprensible
+ * sin depender del texto exacto de la excepción.
+ */
+
+export type HistoryQueryErrorCode =
+  | 'INVALID_FILTER'   // Los parámetros de búsqueda no cumplen el contrato (fechas o montos)
+  | 'INVALID_CURSOR';  // El cursor de paginación (keyset) está corrupto o es de otra versión
+
+export class HistoryQueryError extends Error {
+  readonly code: HistoryQueryErrorCode;
+
+  constructor(code: HistoryQueryErrorCode, message: string) {
+    super(message);
+    this.name = 'HistoryQueryError';
+    this.code = code;
+  }
+}
+
+/**
+ * Mensajes canónicos por código. Se centralizan aquí para que la UI y el
+ * repositorio usen exactamente el mismo texto y las pruebas puedan afirmar
+ * contra constantes.
+ */
+export const HISTORY_ERROR_MESSAGES: Record<HistoryQueryErrorCode, string> = {
+  INVALID_FILTER: 'Revisa los filtros del historial: las fechas y los montos deben ser válidos.',
+  INVALID_CURSOR: 'La paginación del historial venció. Vuelve a cargar la lista.',
+};
+```
+
+### `apps/mobile/src/features/transactions/domain/history.ts`
+
+```typescript
+/**
+ * AhorRaso - Dominio del historial de movimientos (RF-009 / HU-05)
+ *
+ * Define el contrato de consulta del historial: filtros dinámicos combinables
+ * (rango de fechas, categoría, tipo, monto y establecimiento), orden
+ * cronológico, cursores opacos de paginación keyset y la forma de la página
+ * que consume la UI.
+ *
+ * Es dominio puro: no importa React ni el driver de SQLite.
+ */
+import { z } from 'zod';
+import { Category, Merchant, Transaction } from '@/core/db';
+import { HISTORY_ERROR_MESSAGES, HistoryQueryError } from './errors';
+
+/** Movimientos por página (una pantalla y media en móvil). */
+export const DEFAULT_HISTORY_PAGE_SIZE = 20;
+
+/** Tope duro de página: protege la memoria del cliente ante límites externos. */
+export const MAX_HISTORY_PAGE_SIZE = 100;
+
+/** Formato de fecha canónico del proyecto ("YYYY-MM-DD"). */
+export const HISTORY_DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
+
+export const historyTypeSchema = z.enum(['income', 'expense']);
+export type HistoryType = z.infer<typeof historyTypeSchema>;
+
+export const historyOrderSchema = z.enum(['date_desc', 'date_asc']);
+export type HistoryOrder = z.infer<typeof historyOrderSchema>;
+
+const isoDateSchema = z
+  .string()
+  .regex(HISTORY_DATE_REGEX, 'Formato de fecha inválido (YYYY-MM-DD)');
+
+/**
+ * Contrato de los filtros del historial. Todos son opcionales: el repositorio
+ * los aplica de forma aditiva (AND) para soportar filtros combinados.
+ *
+ * - `search`: texto libre que busca en nota, fuente y nombre del establecimiento.
+ * - `merchantQuery`: texto que busca solo por nombre de establecimiento.
+ * - `merchantId`: establecimiento exacto (Escenario 1 de HU-05).
+ * - Montos en céntimos, coherentes con el esquema (`amount_cents` INTEGER).
+ */
+export const historyFiltersSchema = z
+  .object({
+    type: historyTypeSchema.optional(),
+    from: isoDateSchema.optional(),
+    to: isoDateSchema.optional(),
+    categoryId: z.string().min(1).optional(),
+    merchantId: z.string().min(1).optional(),
+    merchantQuery: z.string().max(80, 'Máximo 80 caracteres').optional(),
+    search: z.string().max(200, 'Máximo 200 caracteres').optional(),
+    minAmountCents: z.number().int().nonnegative().optional(),
+    maxAmountCents: z.number().int().positive().optional(),
+    order: historyOrderSchema.default('date_desc'),
+  })
+  .refine((f) => !f.from || !f.to || f.from <= f.to, {
+    message: 'La fecha "desde" no puede ser posterior a la fecha "hasta".',
+    path: ['from'],
+  })
+  .refine(
+    (f) =>
+      f.minAmountCents === undefined ||
+      f.maxAmountCents === undefined ||
+      f.minAmountCents <= f.maxAmountCents,
+    {
+      message: 'El monto mínimo no puede superar al monto máximo.',
+      path: ['minAmountCents'],
+    }
+  );
+
+/** Filtros tal como los entrega la UI (`order` es opcional, se asume `date_desc`). */
+export type HistoryFilters = z.input<typeof historyFiltersSchema>;
+
+/** Filtros ya validados y normalizados por el dominio. */
+export type NormalizedHistoryFilters = z.output<typeof historyFiltersSchema>;
+
+/**
+ * Convierte un error de Zod en un `HistoryQueryError` legible, evitando que la
+ * UI muestre el JSON crudo de la librería de validación.
+ */
+export function toHistoryFilterError(error: unknown): HistoryQueryError {
+  if (error instanceof HistoryQueryError) return error;
+
+  if (error instanceof z.ZodError) {
+    const first = error.issues[0];
+    const field = first && first.path.length > 0 ? `${first.path.join('.')}: ` : '';
+    return new HistoryQueryError(
+      'INVALID_FILTER',
+      first ? `${field}${first.message}` : HISTORY_ERROR_MESSAGES.INVALID_FILTER
+    );
+  }
+
+  return new HistoryQueryError('INVALID_FILTER', HISTORY_ERROR_MESSAGES.INVALID_FILTER);
+}
+
+/**
+ * Normaliza un término de búsqueda para `LIKE`: recorta, pasa a minúsculas y
+ * elimina los comodines de SQLite (`%`, `_`) para que el texto del usuario se
+ * compare literalmente. Devuelve `null` si no queda nada útil.
+ */
+export function normalizeHistorySearchTerm(value?: string | null): string | null {
+  if (!value) return null;
+  const cleaned = value.trim().toLowerCase().replace(/[%_]/g, '');
+  return cleaned.length > 0 ? cleaned : null;
+}
+
+/** Posición (keyset) desde la que continuar una página del historial. */
+export interface HistoryCursor {
+  occurredOn: string;
+  createdAt: string;
+  id: string;
+}
+
+const CURSOR_SEPARATOR = '|';
+const CURSOR_VERSION = 'v1';
+
+/**
+ * Serializa un movimiento como cursor opaco y estable. Se usa la tupla
+ * (occurredOn, createdAt, id), que es exactamente el criterio de orden, de modo
+ * que nuevos registros no desplazan las páginas siguientes (a diferencia de
+ * OFFSET).
+ */
+export function encodeHistoryCursor(
+  transaction: Pick<Transaction, 'id' | 'occurredOn' | 'createdAt'>
+): string {
+  return [
+    CURSOR_VERSION,
+    transaction.occurredOn,
+    transaction.createdAt,
+    transaction.id,
+  ].join(CURSOR_SEPARATOR);
+}
+
+/** Decodifica un cursor; lanza `INVALID_CURSOR` si está corrupto. */
+export function decodeHistoryCursor(raw: string): HistoryCursor {
+  const parts = raw.split(CURSOR_SEPARATOR);
+  if (parts.length !== 4 || parts[0] !== CURSOR_VERSION) {
+    throw new HistoryQueryError('INVALID_CURSOR', HISTORY_ERROR_MESSAGES.INVALID_CURSOR);
+  }
+
+  const [, occurredOn, createdAt, id] = parts;
+  if (!HISTORY_DATE_REGEX.test(occurredOn) || createdAt.length === 0 || id.length === 0) {
+    throw new HistoryQueryError('INVALID_CURSOR', HISTORY_ERROR_MESSAGES.INVALID_CURSOR);
+  }
+
+  return { occurredOn, createdAt, id };
+}
+
+/** Movimiento del historial enriquecido con sus referencias lógicas. */
+export interface HistoryItem extends Transaction {
+  category: Category | null;
+  merchant: Merchant | null;
+}
+
+/** Sumas del conjunto filtrado completo (no solo de la página visible). */
+export interface HistoryTotals {
+  incomeCents: number;
+  expenseCents: number;
+  netCents: number;
+}
+
+/** Página de historial devuelta por el repositorio. */
+export interface HistoryPage {
+  items: HistoryItem[];
+  /** Cursor para pedir la siguiente página; `null` si no hay más resultados. */
+  nextCursor: string | null;
+  hasMore: boolean;
+  /** Total de movimientos que cumplen los filtros. */
+  total: number;
+  totals: HistoryTotals;
+}
+
+/** Parámetros de paginación de la consulta. */
+export interface HistoryQueryOptions {
+  limit?: number;
+  cursor?: string | null;
+}
+
+/** Acota el tamaño de página al rango soportado por el dominio. */
+export function normalizeHistoryLimit(limit?: number): number {
+  if (limit === undefined || !Number.isFinite(limit)) return DEFAULT_HISTORY_PAGE_SIZE;
+  return Math.min(Math.max(Math.trunc(limit), 1), MAX_HISTORY_PAGE_SIZE);
+}
+
+/** Página vacía con totales en cero (estado inicial y sin coincidencias). */
+export const EMPTY_HISTORY_PAGE: HistoryPage = {
+  items: [],
+  nextCursor: null,
+  hasMore: false,
+  total: 0,
+  totals: { incomeCents: 0, expenseCents: 0, netCents: 0 },
+};
+
+/**
+ * Cuenta los filtros activos (excluye el orden, que siempre tiene valor). Se usa
+ * en la UI para el badge del botón de filtros y el estado del botón "Limpiar".
+ */
+export function countActiveHistoryFilters(filters: HistoryFilters): number {
+  return [
+    filters.type,
+    filters.from,
+    filters.to,
+    filters.categoryId,
+    filters.merchantId,
+    filters.merchantQuery,
+    filters.search,
+    filters.minAmountCents,
+    filters.maxAmountCents,
+  ].filter((value) => value !== undefined && value !== null && value !== '').length;
+}
+
+/** Indica si hay al menos un filtro activo (para la UI de chips/reset). */
+export function hasActiveHistoryFilters(filters: HistoryFilters): boolean {
+  return countActiveHistoryFilters(filters) > 0;
+}
+
+// ==========================================
+// Atajos de rango de fechas (UI de filtros)
+// ==========================================
+
+/** Formatea una fecha local como "YYYY-MM-DD" (formato canónico del proyecto). */
+export function toIsoDate(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+export type HistoryRangePreset = 'today' | 'week' | 'month' | 'lastMonth' | 'all';
+
+/** Atajos temporales ofrecidos por la barra de filtros. */
+export const HISTORY_RANGE_PRESETS: { id: HistoryRangePreset; label: string }[] = [
+  { id: 'today', label: 'Hoy' },
+  { id: 'week', label: 'Últimos 7 días' },
+  { id: 'month', label: 'Este mes' },
+  { id: 'lastMonth', label: 'Mes pasado' },
+  { id: 'all', label: 'Todo' },
+];
+
+/**
+ * Traduce un atajo temporal al rango (`from`/`to`) en la zona horaria del
+ * usuario. `all` no acota nada (devuelve un rango vacío).
+ */
+export function resolveHistoryRangePreset(
+  preset: HistoryRangePreset,
+  today: Date = new Date()
+): { from?: string; to?: string } {
+  const end = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+
+  switch (preset) {
+    case 'today':
+      return { from: toIsoDate(end), to: toIsoDate(end) };
+    case 'week': {
+      const start = new Date(end);
+      start.setDate(start.getDate() - 6);
+      return { from: toIsoDate(start), to: toIsoDate(end) };
+    }
+    case 'month': {
+      const start = new Date(end.getFullYear(), end.getMonth(), 1);
+      return { from: toIsoDate(start), to: toIsoDate(end) };
+    }
+    case 'lastMonth': {
+      const start = new Date(end.getFullYear(), end.getMonth() - 1, 1);
+      const lastDay = new Date(end.getFullYear(), end.getMonth(), 0);
+      return { from: toIsoDate(start), to: toIsoDate(lastDay) };
+    }
+    case 'all':
+    default:
+      return {};
+  }
+}
+
+// ==========================================
+// Entrada de montos (UI de filtros)
+// ==========================================
+
+/**
+ * Convierte el texto de un monto en soles a céntimos (entero).
+ * - `undefined`: el campo está vacío (sin filtro de ese extremo).
+ * - `null`: el texto no es un monto válido (se reporta en la UI de filtros).
+ */
+export function parseAmountToCents(raw: string): number | undefined | null {
+  const trimmed = raw.trim();
+  if (!trimmed) return undefined;
+  if (!/^\d+([.,]\d{0,2})?$/.test(trimmed)) return null;
+
+  const cents = Math.round(Number(trimmed.replace(',', '.')) * 100);
+  return Number.isFinite(cents) && cents >= 0 ? cents : null;
+}
+```
+
 ### `apps/mobile/src/features/transactions/domain/types.ts`
 
 ```typescript
@@ -53555,6 +54415,226 @@ export type CreateIncomeInput = z.input<typeof createIncomeSchema>;
 
 export type { Transaction };
 
+```
+
+### `apps/mobile/src/features/transactions/domain/__tests__/history.test.ts`
+
+```typescript
+/**
+ * Pruebas unitarias del dominio del historial (RF-009): validación de filtros,
+ * normalización de búsqueda y cursores de paginación keyset. Son puras (sin
+ * SQLite ni React).
+ */
+import {
+  DEFAULT_HISTORY_PAGE_SIZE,
+  HISTORY_RANGE_PRESETS,
+  MAX_HISTORY_PAGE_SIZE,
+  countActiveHistoryFilters,
+  decodeHistoryCursor,
+  encodeHistoryCursor,
+  hasActiveHistoryFilters,
+  historyFiltersSchema,
+  normalizeHistoryLimit,
+  normalizeHistorySearchTerm,
+  parseAmountToCents,
+  resolveHistoryRangePreset,
+  toIsoDate,
+} from '../history';
+import { HistoryQueryError } from '../errors';
+
+describe('historyFiltersSchema', () => {
+  it('aplica el orden por defecto (más reciente primero)', () => {
+    const parsed = historyFiltersSchema.parse({});
+
+    expect(parsed.order).toBe('date_desc');
+  });
+
+  it('acepta filtros combinados válidos', () => {
+    const parsed = historyFiltersSchema.parse({
+      type: 'expense',
+      from: '2026-10-01',
+      to: '2026-10-31',
+      categoryId: 'cat-1',
+      merchantId: 'mer-1',
+      minAmountCents: 500,
+      maxAmountCents: 5000,
+      search: 'menú',
+      order: 'date_asc',
+    });
+
+    expect(parsed.type).toBe('expense');
+    expect(parsed.from).toBe('2026-10-01');
+    expect(parsed.order).toBe('date_asc');
+  });
+
+  it('rechaza fechas con formato distinto a YYYY-MM-DD', () => {
+    const result = historyFiltersSchema.safeParse({ from: '01-10-2026' });
+
+    expect(result.success).toBe(false);
+  });
+
+  it('rechaza un rango de fechas invertido', () => {
+    const result = historyFiltersSchema.safeParse({ from: '2026-10-31', to: '2026-10-01' });
+
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues[0].message).toContain('posterior');
+    }
+  });
+
+  it('rechaza un rango de montos invertido', () => {
+    const result = historyFiltersSchema.safeParse({
+      minAmountCents: 9000,
+      maxAmountCents: 100,
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it('rechaza montos decimales o negativos (los montos son céntimos enteros)', () => {
+    expect(historyFiltersSchema.safeParse({ minAmountCents: 10.5 }).success).toBe(false);
+    expect(historyFiltersSchema.safeParse({ minAmountCents: -1 }).success).toBe(false);
+  });
+});
+
+describe('cursores de paginación keyset', () => {
+  const tx = {
+    id: 'tx-1',
+    occurredOn: '2026-10-05',
+    createdAt: '2026-10-05T15:04:05.123Z',
+  };
+
+  it('serializa y deserializa un movimiento sin pérdida de datos', () => {
+    const cursor = encodeHistoryCursor(tx);
+
+    expect(decodeHistoryCursor(cursor)).toEqual({
+      occurredOn: tx.occurredOn,
+      createdAt: tx.createdAt,
+      id: tx.id,
+    });
+  });
+
+  it('rechaza cursores sin versión, incompletos o con fecha inválida', () => {
+    const invalid = [
+      '',
+      'cursor-invalido',
+      '2026-10-05|2026-10-05T15:04:05.123Z|tx-1',
+      'v1|2026-10-05|tx-1',
+      'v1|05-10-2026|2026-10-05T15:04:05.123Z|tx-1',
+      'v2|2026-10-05|2026-10-05T15:04:05.123Z|tx-1',
+    ];
+
+    for (const raw of invalid) {
+      let thrown: HistoryQueryError | null = null;
+      try {
+        decodeHistoryCursor(raw);
+      } catch (error) {
+        thrown = error as HistoryQueryError;
+      }
+      expect(thrown?.code).toBe('INVALID_CURSOR');
+    }
+  });
+});
+
+describe('utilidades del historial', () => {
+  it('acota el tamaño de página al rango soportado', () => {
+    expect(normalizeHistoryLimit(undefined)).toBe(DEFAULT_HISTORY_PAGE_SIZE);
+    expect(normalizeHistoryLimit(0)).toBe(1);
+    expect(normalizeHistoryLimit(-5)).toBe(1);
+    expect(normalizeHistoryLimit(500)).toBe(MAX_HISTORY_PAGE_SIZE);
+    expect(normalizeHistoryLimit(Number.NaN)).toBe(DEFAULT_HISTORY_PAGE_SIZE);
+    expect(normalizeHistoryLimit(7)).toBe(7);
+  });
+
+  it('normaliza el término de búsqueda y descarta comodines de LIKE', () => {
+    expect(normalizeHistorySearchTerm('  Menú UNSA ')).toBe('menú unsa');
+    expect(normalizeHistorySearchTerm('%Tambo%')).toBe('tambo');
+    expect(normalizeHistorySearchTerm('a_b')).toBe('ab');
+    expect(normalizeHistorySearchTerm('   ')).toBeNull();
+    expect(normalizeHistorySearchTerm(undefined)).toBeNull();
+    expect(normalizeHistorySearchTerm('%')).toBeNull();
+  });
+
+  it('cuenta solo los filtros activos e ignora el orden', () => {
+    expect(countActiveHistoryFilters({ order: 'date_asc' })).toBe(0);
+    expect(hasActiveHistoryFilters({ order: 'date_asc' })).toBe(false);
+    expect(countActiveHistoryFilters({ type: 'expense', categoryId: 'c1' })).toBe(2);
+    expect(hasActiveHistoryFilters({ search: 'tambo' })).toBe(true);
+  });
+});
+
+describe('atajos de rango de fechas', () => {
+  // Fecha de referencia fija: domingo 18 de octubre de 2026.
+  const today = new Date(2026, 9, 18);
+
+  it('formatea fechas locales como YYYY-MM-DD', () => {
+    expect(toIsoDate(today)).toBe('2026-10-18');
+    expect(toIsoDate(new Date(2026, 0, 5))).toBe('2026-01-05');
+  });
+
+  it('expone los atajos esperados por la UI', () => {
+    expect(HISTORY_RANGE_PRESETS.map((preset) => preset.id)).toEqual([
+      'today',
+      'week',
+      'month',
+      'lastMonth',
+      'all',
+    ]);
+  });
+
+  it('resuelve el rango de cada atajo', () => {
+    expect(resolveHistoryRangePreset('today', today)).toEqual({
+      from: '2026-10-18',
+      to: '2026-10-18',
+    });
+    expect(resolveHistoryRangePreset('week', today)).toEqual({
+      from: '2026-10-12',
+      to: '2026-10-18',
+    });
+    expect(resolveHistoryRangePreset('month', today)).toEqual({
+      from: '2026-10-01',
+      to: '2026-10-18',
+    });
+    expect(resolveHistoryRangePreset('lastMonth', today)).toEqual({
+      from: '2026-09-01',
+      to: '2026-09-30',
+    });
+    expect(resolveHistoryRangePreset('all', today)).toEqual({});
+  });
+
+  it('calcula el mes pasado correctamente cruzando de año y en febrero', () => {
+    expect(resolveHistoryRangePreset('lastMonth', new Date(2026, 0, 15))).toEqual({
+      from: '2025-12-01',
+      to: '2025-12-31',
+    });
+    expect(resolveHistoryRangePreset('lastMonth', new Date(2026, 2, 10))).toEqual({
+      from: '2026-02-01',
+      to: '2026-02-28',
+    });
+  });
+});
+
+describe('parseAmountToCents', () => {
+  it('convierte montos en soles a céntimos', () => {
+    expect(parseAmountToCents('15.50')).toBe(1550);
+    expect(parseAmountToCents('15,50')).toBe(1550);
+    expect(parseAmountToCents('7')).toBe(700);
+    expect(parseAmountToCents(' 20.5 ')).toBe(2050);
+    expect(parseAmountToCents('0')).toBe(0);
+  });
+
+  it('devuelve undefined cuando el campo está vacío (sin filtro)', () => {
+    expect(parseAmountToCents('')).toBeUndefined();
+    expect(parseAmountToCents('   ')).toBeUndefined();
+  });
+
+  it('devuelve null cuando el texto no es un monto válido', () => {
+    expect(parseAmountToCents('abc')).toBeNull();
+    expect(parseAmountToCents('-5')).toBeNull();
+    expect(parseAmountToCents('15.505')).toBeNull();
+    expect(parseAmountToCents('15.5.5')).toBeNull();
+  });
+});
 ```
 
 ### `apps/mobile/src/features/transactions/ui/EditTransactionCategoryModal.tsx`
@@ -53842,6 +54922,1518 @@ const styles = StyleSheet.create({
     ...typography.labelLarge,
     color: '#0D0D0F',
     fontWeight: '700',
+  },
+});
+```
+
+### `apps/mobile/src/features/transactions/ui/HistoryFiltersModal.tsx`
+
+```tsx
+import React, { useState } from 'react';
+import {
+  View,
+  Text,
+  Modal,
+  StyleSheet,
+  TextInput,
+  Pressable,
+  ScrollView,
+  KeyboardAvoidingView,
+  Platform,
+} from 'react-native';
+import { colors, spacing, radius, typography, fontFamilies } from '@/core/theme';
+import { Icon } from '@/core/ui';
+import { Category, Merchant } from '@/core/db';
+import {
+  HISTORY_DATE_REGEX,
+  HISTORY_RANGE_PRESETS,
+  HistoryFilters,
+  HistoryOrder,
+  HistoryRangePreset,
+  parseAmountToCents,
+  resolveHistoryRangePreset,
+} from '../domain/history';
+
+export interface HistoryFiltersModalProps {
+  visible: boolean;
+  /** Filtros avanzados aplicados actualmente (sin `type` ni `search`, que viven en la barra). */
+  filters: HistoryFilters;
+  categories: Category[];
+  merchants: Merchant[];
+  onApply: (filters: HistoryFilters) => void;
+  onReset: () => void;
+  onClose: () => void;
+}
+
+/** Filtros avanzados del historial: fechas, categoría, establecimiento y montos. */
+export const HistoryFiltersModal: React.FC<HistoryFiltersModalProps> = ({
+  visible,
+  filters,
+  categories,
+  merchants,
+  onApply,
+  onReset,
+  onClose,
+}) => {
+  // El formulario se monta solo con el modal visible: cada apertura parte de
+  // los filtros aplicados, sin necesidad de efectos de sincronización.
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      {visible ? (
+        <HistoryFiltersForm
+          filters={filters}
+          categories={categories}
+          merchants={merchants}
+          onApply={onApply}
+          onReset={onReset}
+          onClose={onClose}
+        />
+      ) : null}
+    </Modal>
+  );
+};
+
+type HistoryFiltersFormProps = Omit<HistoryFiltersModalProps, 'visible'>;
+
+const HistoryFiltersForm: React.FC<HistoryFiltersFormProps> = ({
+  filters,
+  categories,
+  merchants,
+  onApply,
+  onReset,
+  onClose,
+}) => {
+  const [from, setFrom] = useState(filters.from ?? '');
+  const [to, setTo] = useState(filters.to ?? '');
+  const [categoryId, setCategoryId] = useState<string | null>(filters.categoryId ?? null);
+  const [merchantId, setMerchantId] = useState<string | null>(filters.merchantId ?? null);
+  const [merchantFilter, setMerchantFilter] = useState('');
+  const [minAmount, setMinAmount] = useState(
+    filters.minAmountCents !== undefined ? (filters.minAmountCents / 100).toFixed(2) : ''
+  );
+  const [maxAmount, setMaxAmount] = useState(
+    filters.maxAmountCents !== undefined ? (filters.maxAmountCents / 100).toFixed(2) : ''
+  );
+  const [order, setOrder] = useState<HistoryOrder>(filters.order ?? 'date_desc');
+  const [error, setError] = useState<string | null>(null);
+
+  const applyPreset = (id: HistoryRangePreset) => {
+    const range = resolveHistoryRangePreset(id);
+    setFrom(range.from ?? '');
+    setTo(range.to ?? '');
+    setError(null);
+  };
+
+  const handleApply = () => {
+    const cleanFrom = from.trim();
+    const cleanTo = to.trim();
+
+    if (cleanFrom && !HISTORY_DATE_REGEX.test(cleanFrom)) {
+      setError('La fecha "desde" debe tener el formato AAAA-MM-DD.');
+      return;
+    }
+    if (cleanTo && !HISTORY_DATE_REGEX.test(cleanTo)) {
+      setError('La fecha "hasta" debe tener el formato AAAA-MM-DD.');
+      return;
+    }
+    if (cleanFrom && cleanTo && cleanFrom > cleanTo) {
+      setError('La fecha "desde" no puede ser posterior a la fecha "hasta".');
+      return;
+    }
+
+    const minAmountCents = parseAmountToCents(minAmount);
+    if (minAmountCents === null) {
+      setError('El monto mínimo no es válido (usa hasta 2 decimales).');
+      return;
+    }
+    const maxAmountCents = parseAmountToCents(maxAmount);
+    if (maxAmountCents === null) {
+      setError('El monto máximo no es válido (usa hasta 2 decimales).');
+      return;
+    }
+    if (
+      minAmountCents !== undefined &&
+      maxAmountCents !== undefined &&
+      minAmountCents > maxAmountCents
+    ) {
+      setError('El monto mínimo no puede superar al monto máximo.');
+      return;
+    }
+
+    onApply({
+      from: cleanFrom || undefined,
+      to: cleanTo || undefined,
+      categoryId: categoryId ?? undefined,
+      merchantId: merchantId ?? undefined,
+      minAmountCents,
+      maxAmountCents,
+      order,
+    });
+    onClose();
+  };
+
+  const handleReset = () => {
+    setFrom('');
+    setTo('');
+    setCategoryId(null);
+    setMerchantId(null);
+    setMerchantFilter('');
+    setMinAmount('');
+    setMaxAmount('');
+    setOrder('date_desc');
+    setError(null);
+    onReset();
+  };
+
+  const visibleMerchants = merchantFilter.trim()
+    ? merchants.filter((merchant) =>
+        merchant.name.toLowerCase().includes(merchantFilter.trim().toLowerCase())
+      )
+    : merchants;
+
+  return (
+    <KeyboardAvoidingView
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      style={styles.overlay}
+    >
+      <View style={styles.sheet}>
+        {/* Header */}
+        <View style={styles.header}>
+          <Text style={styles.title}>Filtros del historial</Text>
+          <Pressable
+            onPress={onClose}
+            style={styles.closeBtn}
+            accessibilityRole="button"
+            accessibilityLabel="Cerrar filtros"
+          >
+            <Icon name="X" size={20} color={colors.ink2} />
+          </Pressable>
+        </View>
+
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.content}
+          keyboardShouldPersistTaps="handled"
+        >
+          {/* 1. Rango de fechas */}
+          <View style={styles.fieldGroup}>
+            <Text style={styles.fieldLabel}>RANGO DE FECHAS</Text>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.chipRow}
+            >
+              {HISTORY_RANGE_PRESETS.map((preset) => (
+                <Pressable
+                  key={preset.id}
+                  onPress={() => applyPreset(preset.id)}
+                  style={styles.presetChip}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Rango ${preset.label}`}
+                >
+                  <Text style={styles.presetChipText}>{preset.label}</Text>
+                </Pressable>
+              ))}
+            </ScrollView>
+
+            <View style={styles.dateRow}>
+              <View style={styles.dateField}>
+                <Text style={styles.dateFieldLabel}>Desde</Text>
+                <TextInput
+                  value={from}
+                  onChangeText={(value) => {
+                    setFrom(value);
+                    setError(null);
+                  }}
+                  placeholder="AAAA-MM-DD"
+                  placeholderTextColor={colors.ink3}
+                  style={styles.input}
+                  autoCapitalize="none"
+                  maxLength={10}
+                />
+              </View>
+              <View style={styles.dateField}>
+                <Text style={styles.dateFieldLabel}>Hasta</Text>
+                <TextInput
+                  value={to}
+                  onChangeText={(value) => {
+                    setTo(value);
+                    setError(null);
+                  }}
+                  placeholder="AAAA-MM-DD"
+                  placeholderTextColor={colors.ink3}
+                  style={styles.input}
+                  autoCapitalize="none"
+                  maxLength={10}
+                />
+              </View>
+            </View>
+          </View>
+
+          {/* 2. Categoría */}
+          <View style={styles.fieldGroup}>
+            <Text style={styles.fieldLabel}>CATEGORÍA</Text>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.chipRow}
+            >
+              <Pressable
+                onPress={() => setCategoryId(null)}
+                style={[styles.chip, categoryId === null && styles.chipSelected]}
+                accessibilityRole="button"
+                accessibilityLabel="Todas las categorías"
+              >
+                <Text style={[styles.chipText, categoryId === null && styles.chipTextSelected]}>
+                  Todas
+                </Text>
+              </Pressable>
+              {categories.map((category) => {
+                const isSelected = categoryId === category.id;
+                return (
+                  <Pressable
+                    key={category.id}
+                    onPress={() => setCategoryId(isSelected ? null : category.id)}
+                    style={[styles.chip, isSelected && { borderColor: category.color }]}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: isSelected }}
+                    accessibilityLabel={`Categoría ${category.name}`}
+                  >
+                    <Icon
+                      name={category.icon}
+                      size={13}
+                      color={isSelected ? category.color : colors.ink3}
+                    />
+                    <Text style={[styles.chipText, isSelected && styles.chipTextSelected]}>
+                      {category.name}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+          </View>
+
+          {/* 3. Establecimiento (Escenario 1 de HU-05) */}
+          <View style={styles.fieldGroup}>
+            <Text style={styles.fieldLabel}>ESTABLECIMIENTO</Text>
+            {merchants.length === 0 ? (
+              <Text style={styles.helperText}>
+                Aún no registraste establecimientos. Se crean al anotar el lugar de un gasto.
+              </Text>
+            ) : (
+              <>
+                <View style={styles.inputContainer}>
+                  <Icon name="Store" size={16} color={colors.ink3} />
+                  <TextInput
+                    value={merchantFilter}
+                    onChangeText={setMerchantFilter}
+                    placeholder="Buscar establecimiento"
+                    placeholderTextColor={colors.ink3}
+                    style={styles.textInput}
+                    autoCapitalize="none"
+                  />
+                  {merchantFilter.length > 0 && (
+                    <Pressable
+                      onPress={() => setMerchantFilter('')}
+                      accessibilityLabel="Limpiar búsqueda de establecimiento"
+                    >
+                      <Icon name="X" size={16} color={colors.ink3} />
+                    </Pressable>
+                  )}
+                </View>
+
+                <View style={styles.merchantChips}>
+                  <Pressable
+                    onPress={() => setMerchantId(null)}
+                    style={[styles.chip, merchantId === null && styles.chipSelected]}
+                    accessibilityRole="button"
+                    accessibilityLabel="Todos los establecimientos"
+                  >
+                    <Text style={[styles.chipText, merchantId === null && styles.chipTextSelected]}>
+                      Todos
+                    </Text>
+                  </Pressable>
+                  {visibleMerchants.map((merchant) => {
+                    const isSelected = merchantId === merchant.id;
+                    return (
+                      <Pressable
+                        key={merchant.id}
+                        onPress={() => setMerchantId(isSelected ? null : merchant.id)}
+                        style={[styles.chip, isSelected && styles.chipSelected]}
+                        accessibilityRole="button"
+                        accessibilityState={{ selected: isSelected }}
+                        accessibilityLabel={`Establecimiento ${merchant.name}`}
+                      >
+                        <Text style={[styles.chipText, isSelected && styles.chipTextSelected]}>
+                          {merchant.name}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                  {visibleMerchants.length === 0 && (
+                    <Text style={styles.helperText}>Sin coincidencias para «{merchantFilter}».</Text>
+                  )}
+                </View>
+              </>
+            )}
+          </View>
+
+          {/* 4. Monto */}
+          <View style={styles.fieldGroup}>
+            <Text style={styles.fieldLabel}>MONTO (S/)</Text>
+            <View style={styles.dateRow}>
+              <View style={styles.dateField}>
+                <Text style={styles.dateFieldLabel}>Mínimo</Text>
+                <TextInput
+                  value={minAmount}
+                  onChangeText={(value) => {
+                    setMinAmount(value.replace(/[^0-9.,]/g, ''));
+                    setError(null);
+                  }}
+                  placeholder="0.00"
+                  placeholderTextColor={colors.ink3}
+                  keyboardType="decimal-pad"
+                  style={styles.input}
+                />
+              </View>
+              <View style={styles.dateField}>
+                <Text style={styles.dateFieldLabel}>Máximo</Text>
+                <TextInput
+                  value={maxAmount}
+                  onChangeText={(value) => {
+                    setMaxAmount(value.replace(/[^0-9.,]/g, ''));
+                    setError(null);
+                  }}
+                  placeholder="0.00"
+                  placeholderTextColor={colors.ink3}
+                  keyboardType="decimal-pad"
+                  style={styles.input}
+                />
+              </View>
+            </View>
+          </View>
+
+          {/* 5. Orden */}
+          <View style={styles.fieldGroup}>
+            <Text style={styles.fieldLabel}>ORDEN CRONOLÓGICO</Text>
+            <View style={styles.segmentedControl}>
+              <Pressable
+                onPress={() => setOrder('date_desc')}
+                style={[styles.segmentTab, order === 'date_desc' && styles.segmentTabActive]}
+                accessibilityRole="button"
+                accessibilityState={{ selected: order === 'date_desc' }}
+              >
+                <Text style={[styles.segmentText, order === 'date_desc' && styles.segmentTextActive]}>
+                  Más recientes
+                </Text>
+              </Pressable>
+              <Pressable
+                onPress={() => setOrder('date_asc')}
+                style={[styles.segmentTab, order === 'date_asc' && styles.segmentTabActive]}
+                accessibilityRole="button"
+                accessibilityState={{ selected: order === 'date_asc' }}
+              >
+                <Text style={[styles.segmentText, order === 'date_asc' && styles.segmentTextActive]}>
+                  Más antiguos
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+
+          {error && (
+            <View style={styles.errorContainer}>
+              <Icon name="AlertCircle" size={16} color={colors.danger} />
+              <Text style={styles.errorMessage}>{error}</Text>
+            </View>
+          )}
+        </ScrollView>
+
+        {/* Acciones */}
+        <View style={styles.footer}>
+          <Pressable
+            onPress={handleReset}
+            style={({ pressed }) => [styles.resetBtn, pressed && { opacity: 0.85 }]}
+            accessibilityRole="button"
+            accessibilityLabel="Limpiar todos los filtros"
+          >
+            <Icon name="RotateCcw" size={16} color={colors.ink2} />
+            <Text style={styles.resetBtnText}>Limpiar</Text>
+          </Pressable>
+          <Pressable
+            onPress={handleApply}
+            style={({ pressed }) => [
+              styles.applyBtn,
+              pressed && { opacity: 0.9, transform: [{ scale: 0.99 }] },
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel="Aplicar filtros"
+          >
+            <Text style={styles.applyBtnText}>Aplicar filtros</Text>
+          </Pressable>
+        </View>
+      </View>
+    </KeyboardAvoidingView>
+  );
+};
+
+const styles = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    backgroundColor: colors.overlay,
+    justifyContent: 'flex-end',
+  },
+  sheet: {
+    backgroundColor: colors.surface,
+    borderTopLeftRadius: radius.xl,
+    borderTopRightRadius: radius.xl,
+    borderColor: colors.line,
+    borderTopWidth: 1,
+    maxHeight: '90%',
+    paddingBottom: Platform.OS === 'ios' ? 24 : 16,
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: spacing.base,
+    paddingVertical: spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.line,
+  },
+  title: {
+    ...typography.titleSmall,
+    color: colors.ink,
+  },
+  closeBtn: {
+    padding: spacing.xs,
+  },
+  content: {
+    padding: spacing.base,
+    gap: spacing.base,
+  },
+  fieldGroup: {
+    gap: spacing.sm,
+  },
+  fieldLabel: {
+    ...typography.labelSmall,
+    color: colors.ink3,
+  },
+  helperText: {
+    ...typography.bodySmall,
+    color: colors.ink3,
+  },
+  chipRow: {
+    flexDirection: 'row',
+    gap: spacing.xs,
+    paddingRight: spacing.base,
+  },
+  presetChip: {
+    paddingHorizontal: spacing.md,
+    height: 30,
+    borderRadius: radius.full,
+    backgroundColor: colors.surface2,
+    borderWidth: 1,
+    borderColor: colors.line,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  presetChipText: {
+    ...typography.bodySmall,
+    color: colors.ink2,
+    fontSize: 12,
+  },
+  dateRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  dateField: {
+    flex: 1,
+    gap: spacing.xxs,
+  },
+  dateFieldLabel: {
+    ...typography.bodySmall,
+    color: colors.ink3,
+    fontSize: 11,
+  },
+  input: {
+    height: 44,
+    backgroundColor: colors.surface2,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+    color: colors.ink,
+    fontFamily: fontFamilies.mono,
+    fontSize: 13,
+    borderWidth: 1,
+    borderColor: colors.line,
+  },
+  inputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    backgroundColor: colors.surface2,
+    borderColor: colors.line,
+    borderWidth: 1,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+    height: 44,
+  },
+  textInput: {
+    flex: 1,
+    color: colors.ink,
+    fontFamily: typography.bodyMedium.fontFamily,
+    fontSize: 14,
+    padding: 0,
+  },
+  merchantChips: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.xs,
+  },
+  chip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xxs,
+    paddingHorizontal: spacing.md,
+    height: 32,
+    borderRadius: radius.full,
+    backgroundColor: colors.surface2,
+    borderWidth: 1,
+    borderColor: colors.line,
+  },
+  chipSelected: {
+    backgroundColor: colors.surface3,
+    borderColor: colors.lineFocus,
+  },
+  chipText: {
+    ...typography.bodySmall,
+    color: colors.ink3,
+    fontSize: 12,
+  },
+  chipTextSelected: {
+    color: colors.ink,
+    fontWeight: '600',
+  },
+  segmentedControl: {
+    flexDirection: 'row',
+    backgroundColor: colors.surface2,
+    borderRadius: radius.md,
+    padding: 3,
+    gap: 4,
+  },
+  segmentTab: {
+    flex: 1,
+    height: 40,
+    borderRadius: radius.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  segmentTabActive: {
+    backgroundColor: colors.surface,
+  },
+  segmentText: {
+    ...typography.bodyMedium,
+    color: colors.ink3,
+    fontSize: 13,
+  },
+  segmentTextActive: {
+    color: colors.ink,
+    fontWeight: '600',
+  },
+  errorContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+    borderColor: colors.danger,
+    borderWidth: 1,
+    padding: spacing.sm,
+    borderRadius: radius.md,
+  },
+  errorMessage: {
+    ...typography.bodySmall,
+    color: colors.danger,
+    flex: 1,
+  },
+  footer: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.base,
+    paddingTop: spacing.sm,
+  },
+  resetBtn: {
+    height: 50,
+    paddingHorizontal: spacing.base,
+    borderRadius: radius.md,
+    backgroundColor: colors.surface2,
+    borderWidth: 1,
+    borderColor: colors.line,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xs,
+  },
+  resetBtnText: {
+    ...typography.labelMedium,
+    color: colors.ink2,
+  },
+  applyBtn: {
+    flex: 1,
+    height: 50,
+    borderRadius: radius.md,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  applyBtnText: {
+    ...typography.labelLarge,
+    color: '#0D0D0F',
+    fontWeight: '700',
+  },
+});
+```
+
+### `apps/mobile/src/features/transactions/ui/HistoryScreen.tsx`
+
+```tsx
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  FlatList,
+  Pressable,
+  TextInput,
+  ActivityIndicator,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useFocusEffect } from 'expo-router';
+import { colors, spacing, radius, typography, fontFamilies } from '@/core/theme';
+import { Icon } from '@/core/ui';
+import { DEV_USER_ID } from '@/core/dev/constants';
+import { Category, Merchant, Transaction } from '@/core/db';
+import { categoriesRepository } from '@/features/categories';
+import {
+  HistoryFilters,
+  HistoryItem,
+  countActiveHistoryFilters,
+} from '../domain/history';
+import { transactionsRepository } from '../data/transactions.repository';
+import { EditTransactionCategoryModal } from './EditTransactionCategoryModal';
+import { HistoryFiltersModal } from './HistoryFiltersModal';
+import { useHistoryPagination } from './useHistoryPagination';
+
+type TypeFilter = 'all' | 'income' | 'expense';
+
+const TYPE_TABS: { id: TypeFilter; label: string }[] = [
+  { id: 'all', label: 'Todos' },
+  { id: 'income', label: 'Ingresos' },
+  { id: 'expense', label: 'Gastos' },
+];
+
+const MONTHS_ES = [
+  'ene',
+  'feb',
+  'mar',
+  'abr',
+  'may',
+  'jun',
+  'jul',
+  'ago',
+  'set',
+  'oct',
+  'nov',
+  'dic',
+];
+
+function formatSoles(cents: number): string {
+  return `S/ ${(cents / 100).toFixed(2)}`;
+}
+
+/**
+ * Formatea "YYYY-MM-DD" como "DD mmm YYYY" sin depender de Intl (Hermes puede
+ * no incluir los datos regionales completos en todas las configuraciones).
+ */
+function formatDateLabel(isoDate: string): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(isoDate);
+  if (!match) return isoDate;
+
+  const [, year, month, day] = match;
+  const monthLabel = MONTHS_ES[Number(month) - 1] ?? month;
+  return `${day} ${monthLabel} ${year}`;
+}
+
+export interface HistoryScreenProps {
+  userId?: string;
+}
+
+/**
+ * Historial de movimientos (RF-009 / HU-05).
+ *
+ * Lista los ingresos y gastos de forma cronológica con filtros combinables
+ * (texto libre, tipo, rango de fechas, categoría, establecimiento y montos) y
+ * paginación incremental (scroll infinito) sobre el repositorio local.
+ */
+export const HistoryScreen: React.FC<HistoryScreenProps> = ({ userId = DEV_USER_ID }) => {
+  const [searchInput, setSearchInput] = useState('');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
+  const [advancedFilters, setAdvancedFilters] = useState<HistoryFilters>({});
+  const [filtersVisible, setFiltersVisible] = useState(false);
+  const [categoriesList, setCategoriesList] = useState<Category[]>([]);
+  const [merchantsList, setMerchantsList] = useState<Merchant[]>([]);
+  const [selectedTx, setSelectedTx] = useState<Transaction | null>(null);
+
+  // Debounce del buscador: una consulta por pausa de tecleo, no por tecla.
+  useEffect(() => {
+    const handle = setTimeout(() => setSearchTerm(searchInput), 300);
+    return () => clearTimeout(handle);
+  }, [searchInput]);
+
+  const queryFilters = useMemo<HistoryFilters>(
+    () => ({
+      ...advancedFilters,
+      type: typeFilter === 'all' ? undefined : typeFilter,
+      search: searchTerm.trim() ? searchTerm.trim() : undefined,
+    }),
+    [advancedFilters, typeFilter, searchTerm]
+  );
+
+  const { items, totals, total, hasMore, loading, loadingMore, error, reload, loadMore } =
+    useHistoryPagination(userId, queryFilters);
+
+  // Catálogos que alimentan los chips de categoría y establecimiento.
+  const loadFilterOptions = useCallback(() => {
+    try {
+      setCategoriesList(categoriesRepository.getByUser(userId));
+      setMerchantsList(transactionsRepository.getMerchantOptions(userId));
+    } catch (e) {
+      console.error('Error al cargar los catálogos del historial:', e);
+    }
+  }, [userId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (!cancelled) loadFilterOptions();
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [loadFilterOptions]);
+
+  // Al recuperar el foco (nuevo gasto, cambio de categoría) se refresca la
+  // primera página y los catálogos; el primer foco no duplica la carga inicial.
+  const firstFocus = useRef(true);
+  useFocusEffect(
+    useCallback(() => {
+      if (firstFocus.current) {
+        firstFocus.current = false;
+        return;
+      }
+      loadFilterOptions();
+      reload();
+    }, [loadFilterOptions, reload])
+  );
+
+  const clearAllFilters = useCallback(() => {
+    setTypeFilter('all');
+    setSearchInput('');
+    setSearchTerm('');
+    setAdvancedFilters({});
+  }, []);
+
+  const activeFilterCount = useMemo(
+    () => countActiveHistoryFilters(queryFilters),
+    [queryFilters]
+  );
+
+  const activeChips = useMemo(() => {
+    const chips: { key: string; label: string; onClear: () => void }[] = [];
+
+    if (typeFilter !== 'all') {
+      chips.push({
+        key: 'type',
+        label: typeFilter === 'income' ? 'Ingresos' : 'Gastos',
+        onClear: () => setTypeFilter('all'),
+      });
+    }
+
+    if (searchTerm.trim()) {
+      chips.push({
+        key: 'search',
+        label: `«${searchTerm.trim()}»`,
+        onClear: () => {
+          setSearchInput('');
+          setSearchTerm('');
+        },
+      });
+    }
+
+    if (advancedFilters.from || advancedFilters.to) {
+      chips.push({
+        key: 'range',
+        label: `${advancedFilters.from ?? 'inicio'} → ${advancedFilters.to ?? 'hoy'}`,
+        onClear: () => setAdvancedFilters((prev) => ({ ...prev, from: undefined, to: undefined })),
+      });
+    }
+
+    if (advancedFilters.categoryId) {
+      const category = categoriesList.find((item) => item.id === advancedFilters.categoryId);
+      chips.push({
+        key: 'category',
+        label: category?.name ?? 'Categoría',
+        onClear: () => setAdvancedFilters((prev) => ({ ...prev, categoryId: undefined })),
+      });
+    }
+
+    if (advancedFilters.merchantId) {
+      const merchant = merchantsList.find((item) => item.id === advancedFilters.merchantId);
+      chips.push({
+        key: 'merchant',
+        label: merchant?.name ?? 'Establecimiento',
+        onClear: () => setAdvancedFilters((prev) => ({ ...prev, merchantId: undefined })),
+      });
+    }
+
+    if (
+      advancedFilters.minAmountCents !== undefined ||
+      advancedFilters.maxAmountCents !== undefined
+    ) {
+      chips.push({
+        key: 'amount',
+        label: `${formatSoles(advancedFilters.minAmountCents ?? 0)} - ${
+          advancedFilters.maxAmountCents !== undefined
+            ? formatSoles(advancedFilters.maxAmountCents)
+            : 'sin tope'
+        }`,
+        onClear: () =>
+          setAdvancedFilters((prev) => ({
+            ...prev,
+            minAmountCents: undefined,
+            maxAmountCents: undefined,
+          })),
+      });
+    }
+
+    if (advancedFilters.order === 'date_asc') {
+      chips.push({
+        key: 'order',
+        label: 'Más antiguos primero',
+        onClear: () => setAdvancedFilters((prev) => ({ ...prev, order: 'date_desc' })),
+      });
+    }
+
+    return chips;
+  }, [advancedFilters, categoriesList, merchantsList, searchTerm, typeFilter]);
+
+  const renderItem = useCallback(
+    ({ item }: { item: HistoryItem }) => {
+      const isIncome = item.type === 'income';
+      const category = item.category;
+      const paymentLabel =
+        item.paymentMethod === 'cash'
+          ? 'Efectivo'
+          : item.paymentMethod === 'digital'
+            ? 'Yape / Plin'
+            : null;
+
+      const detailParts = [item.merchant?.name, item.note || item.source, paymentLabel].filter(
+        Boolean
+      );
+
+      return (
+        <Pressable
+          onPress={() => setSelectedTx(item)}
+          style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
+          accessibilityRole="button"
+          accessibilityLabel={`Movimiento de ${formatSoles(item.amountCents)} del ${item.occurredOn}. Toca para cambiar su categoría.`}
+        >
+          <View style={styles.iconBox}>
+            <Icon
+              name={category?.icon || (isIncome ? 'Coins' : 'Tag')}
+              size={18}
+              color={category?.color || (isIncome ? colors.secondary : colors.primary)}
+            />
+          </View>
+
+          <View style={styles.rowInfo}>
+            <Text style={styles.rowTitle} numberOfLines={1}>
+              {category?.name || (isIncome ? 'Ingreso' : 'Transacción')}
+            </Text>
+            <Text style={styles.rowSub} numberOfLines={1}>
+              {formatDateLabel(item.occurredOn)}
+              {detailParts.length > 0 ? ` · ${detailParts.join(' · ')}` : ''}
+            </Text>
+          </View>
+
+          <View style={styles.rowRight}>
+            <Text style={[styles.rowAmount, isIncome && styles.rowAmountIncome]}>
+              {isIncome ? '+ ' : '- '}
+              {formatSoles(item.amountCents)}
+            </Text>
+            <Text style={styles.rowType}>{isIncome ? 'Ingreso' : 'Gasto'}</Text>
+          </View>
+
+          <Icon name="Pencil" size={13} color={colors.ink3} />
+        </Pressable>
+      );
+    },
+    []
+  );
+
+  const listHeader = (
+    <View style={styles.listHeader}>
+      {/* Totales del conjunto filtrado */}
+      <View style={styles.totalsCard}>
+        <View style={styles.totalColumn}>
+          <Text style={styles.totalLabel}>INGRESOS</Text>
+          <Text style={[styles.totalValue, { color: colors.secondary }]}>
+            {formatSoles(totals.incomeCents)}
+          </Text>
+        </View>
+        <View style={styles.totalDivider} />
+        <View style={styles.totalColumn}>
+          <Text style={styles.totalLabel}>EGRESOS</Text>
+          <Text style={[styles.totalValue, { color: colors.tertiary }]}>
+            {formatSoles(totals.expenseCents)}
+          </Text>
+        </View>
+        <View style={styles.totalDivider} />
+        <View style={styles.totalColumn}>
+          <Text style={styles.totalLabel}>NETO</Text>
+          <Text style={styles.totalValue}>{formatSoles(totals.netCents)}</Text>
+        </View>
+      </View>
+
+      <View style={styles.sectionHeader}>
+        <Text style={styles.sectionTitle}>
+          {activeFilterCount > 0 ? 'RESULTADOS FILTRADOS' : 'TODAS LAS TRANSACCIONES'}
+        </Text>
+        <Text style={styles.countText}>
+          {items.length} de {total} registros
+        </Text>
+      </View>
+
+      {/* Chips de filtros activos */}
+      {activeChips.length > 0 && (
+        <View style={styles.chipsRow}>
+          {activeChips.map((chip) => (
+            <Pressable
+              key={chip.key}
+              onPress={chip.onClear}
+              style={styles.activeChip}
+              accessibilityRole="button"
+              accessibilityLabel={`Quitar filtro ${chip.label}`}
+            >
+              <Text style={styles.activeChipText} numberOfLines={1}>
+                {chip.label}
+              </Text>
+              <Icon name="X" size={12} color={colors.ink2} />
+            </Pressable>
+          ))}
+          <Pressable
+            onPress={clearAllFilters}
+            style={styles.clearChip}
+            accessibilityRole="button"
+            accessibilityLabel="Limpiar todos los filtros"
+          >
+            <Text style={styles.clearChipText}>Limpiar todo</Text>
+          </Pressable>
+        </View>
+      )}
+
+      {error && (
+        <View style={styles.errorBanner}>
+          <Icon name="AlertCircle" size={16} color={colors.danger} />
+          <Text style={styles.errorBannerText}>{error}</Text>
+        </View>
+      )}
+    </View>
+  );
+
+  const listEmpty = loading ? (
+    <View style={styles.centerContent}>
+      <ActivityIndicator size="large" color={colors.primary} />
+      <Text style={styles.emptySubtitle}>Cargando movimientos…</Text>
+    </View>
+  ) : (
+    <View style={styles.emptyContainer}>
+      <View style={styles.iconCircle}>
+        <Icon name="ReceiptText" size={28} color={colors.ink3} />
+      </View>
+      <Text style={styles.emptyTitle}>
+        {activeFilterCount > 0 ? 'Sin resultados con estos filtros' : 'Sin movimientos aún'}
+      </Text>
+      <Text style={styles.emptySubtitle}>
+        {activeFilterCount > 0
+          ? 'Prueba con otro rango de fechas, categoría o establecimiento.'
+          : 'Los gastos e ingresos que registres aparecerán aquí para auditar tus saldos.'}
+      </Text>
+      {activeFilterCount > 0 && (
+        <Pressable onPress={clearAllFilters} style={styles.emptyBtn} accessibilityRole="button">
+          <Icon name="RotateCcw" size={14} color={colors.ink} />
+          <Text style={styles.emptyBtnText}>Limpiar filtros</Text>
+        </Pressable>
+      )}
+    </View>
+  );
+
+  const listFooter = (
+    <View style={styles.footer}>
+      {loadingMore && <ActivityIndicator size="small" color={colors.primary} />}
+      {!loadingMore && hasMore && (
+        <Pressable
+          onPress={loadMore}
+          style={styles.loadMoreBtn}
+          accessibilityRole="button"
+          accessibilityLabel="Cargar más movimientos"
+        >
+          <Icon name="ChevronDown" size={16} color={colors.ink2} />
+          <Text style={styles.loadMoreText}>Cargar más</Text>
+        </Pressable>
+      )}
+      {!loading && !hasMore && items.length > 0 && (
+        <Text style={styles.endText}>Fin del historial · {total} movimientos</Text>
+      )}
+    </View>
+  );
+
+  return (
+    <SafeAreaView style={styles.safeArea}>
+      {/* Header fijo */}
+      <View style={styles.header}>
+        <Text style={styles.headerTitle}>Historial</Text>
+        <Pressable
+          onPress={() => setFiltersVisible(true)}
+          style={styles.filterBtn}
+          accessibilityRole="button"
+          accessibilityLabel="Abrir filtros del historial"
+        >
+          <Icon name="SlidersHorizontal" size={18} color={colors.ink} />
+          <Text style={styles.filterBtnText}>Filtros</Text>
+          {activeFilterCount > 0 && (
+            <View style={styles.filterBadge}>
+              <Text style={styles.filterBadgeText}>{activeFilterCount}</Text>
+            </View>
+          )}
+        </Pressable>
+      </View>
+
+      {/* Buscador + tipo */}
+      <View style={styles.controls}>
+        <View style={styles.searchContainer}>
+          <Icon name="Search" size={18} color={colors.ink3} />
+          <TextInput
+            value={searchInput}
+            onChangeText={setSearchInput}
+            placeholder="Buscar por comercio, nota o fuente"
+            placeholderTextColor={colors.ink3}
+            style={styles.searchInput}
+            autoCapitalize="none"
+            returnKeyType="search"
+            accessibilityLabel="Buscar en el historial"
+          />
+          {searchInput.length > 0 && (
+            <Pressable
+              onPress={() => setSearchInput('')}
+              accessibilityRole="button"
+              accessibilityLabel="Limpiar búsqueda"
+            >
+              <Icon name="X" size={16} color={colors.ink3} />
+            </Pressable>
+          )}
+        </View>
+
+        <View style={styles.segmentedControl}>
+          {TYPE_TABS.map((tab) => {
+            const isSelected = typeFilter === tab.id;
+            return (
+              <Pressable
+                key={tab.id}
+                onPress={() => setTypeFilter(tab.id)}
+                style={[styles.segmentTab, isSelected && styles.segmentTabActive]}
+                accessibilityRole="button"
+                accessibilityState={{ selected: isSelected }}
+                accessibilityLabel={`Filtrar por ${tab.label}`}
+              >
+                <Text style={[styles.segmentText, isSelected && styles.segmentTextActive]}>
+                  {tab.label}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      </View>
+
+      {/* Lista con scroll infinito */}
+      <FlatList
+        data={items}
+        keyExtractor={(item) => item.id}
+        renderItem={renderItem}
+        ListHeaderComponent={listHeader}
+        ListEmptyComponent={listEmpty}
+        ListFooterComponent={listFooter}
+        onEndReached={loadMore}
+        onEndReachedThreshold={0.4}
+        keyboardShouldPersistTaps="handled"
+        contentContainerStyle={styles.listContent}
+        showsVerticalScrollIndicator={false}
+      />
+
+      {/* Filtros avanzados */}
+      <HistoryFiltersModal
+        visible={filtersVisible}
+        filters={advancedFilters}
+        categories={categoriesList}
+        merchants={merchantsList}
+        onApply={(next) => setAdvancedFilters(next)}
+        onReset={() => setAdvancedFilters({})}
+        onClose={() => setFiltersVisible(false)}
+      />
+
+      {/* Cambio de categoría (RF-004) */}
+      <EditTransactionCategoryModal
+        visible={selectedTx !== null}
+        transaction={selectedTx}
+        onClose={() => setSelectedTx(null)}
+        onSaved={() => {
+          loadFilterOptions();
+          reload();
+        }}
+      />
+    </SafeAreaView>
+  );
+};
+
+const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: colors.bg,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.gutter,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.sm,
+  },
+  headerTitle: {
+    ...typography.titleLarge,
+  },
+  filterBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    height: 36,
+    paddingHorizontal: spacing.md,
+    borderRadius: radius.full,
+    backgroundColor: colors.surface2,
+    borderWidth: 1,
+    borderColor: colors.line,
+  },
+  filterBtnText: {
+    ...typography.labelMedium,
+    color: colors.ink,
+    fontSize: 12,
+  },
+  filterBadge: {
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    paddingHorizontal: 4,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  filterBadgeText: {
+    fontFamily: fontFamilies.monoBold,
+    fontSize: 10,
+    color: '#0D0D0F',
+  },
+  controls: {
+    paddingHorizontal: spacing.gutter,
+    gap: spacing.sm,
+    paddingBottom: spacing.sm,
+  },
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    backgroundColor: colors.surface2,
+    borderColor: colors.line,
+    borderWidth: 1,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.base,
+    height: 44,
+  },
+  searchInput: {
+    flex: 1,
+    color: colors.ink,
+    fontFamily: typography.bodyMedium.fontFamily,
+    fontSize: 14,
+    padding: 0,
+  },
+  segmentedControl: {
+    flexDirection: 'row',
+    backgroundColor: colors.surface2,
+    borderRadius: radius.md,
+    padding: 3,
+    gap: 4,
+  },
+  segmentTab: {
+    flex: 1,
+    height: 36,
+    borderRadius: radius.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  segmentTabActive: {
+    backgroundColor: colors.surface,
+  },
+  segmentText: {
+    ...typography.bodyMedium,
+    color: colors.ink3,
+    fontSize: 13,
+  },
+  segmentTextActive: {
+    color: colors.ink,
+    fontWeight: '600',
+  },
+  listContent: {
+    paddingHorizontal: spacing.gutter,
+    paddingBottom: spacing.xxl,
+    flexGrow: 1,
+  },
+  listHeader: {
+    gap: spacing.sm,
+    marginBottom: spacing.sm,
+  },
+  totalsCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderColor: colors.line,
+    borderWidth: 1,
+    borderRadius: radius.md,
+    paddingVertical: spacing.md,
+  },
+  totalColumn: {
+    flex: 1,
+    alignItems: 'center',
+    gap: 2,
+  },
+  totalDivider: {
+    width: 1,
+    height: 28,
+    backgroundColor: colors.line,
+  },
+  totalLabel: {
+    ...typography.labelSmall,
+    fontSize: 9,
+    color: colors.ink3,
+  },
+  totalValue: {
+    ...typography.monoMedium,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  sectionTitle: {
+    ...typography.labelSmall,
+    color: colors.ink3,
+  },
+  countText: {
+    ...typography.monoSmall,
+    fontSize: 10,
+    color: colors.ink3,
+  },
+  chipsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.xs,
+  },
+  activeChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    maxWidth: 220,
+    paddingHorizontal: spacing.sm,
+    height: 26,
+    borderRadius: radius.full,
+    backgroundColor: colors.surface3,
+    borderWidth: 1,
+    borderColor: colors.lineFocus,
+  },
+  activeChipText: {
+    ...typography.bodySmall,
+    color: colors.ink,
+    fontSize: 11,
+    flexShrink: 1,
+  },
+  clearChip: {
+    paddingHorizontal: spacing.sm,
+    height: 26,
+    borderRadius: radius.full,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  clearChipText: {
+    ...typography.bodySmall,
+    color: colors.primary,
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  errorBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+    borderColor: colors.danger,
+    borderWidth: 1,
+    padding: spacing.sm,
+    borderRadius: radius.md,
+  },
+  errorBannerText: {
+    ...typography.bodySmall,
+    color: colors.danger,
+    flex: 1,
+  },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    paddingHorizontal: spacing.base,
+    paddingVertical: spacing.md,
+    backgroundColor: colors.surface,
+    borderColor: colors.line,
+    borderWidth: 1,
+    borderRadius: radius.md,
+    marginBottom: spacing.sm,
+  },
+  rowPressed: {
+    backgroundColor: colors.surface2,
+  },
+  iconBox: {
+    width: 36,
+    height: 36,
+    borderRadius: radius.sm,
+    backgroundColor: colors.surface2,
+    borderWidth: 1,
+    borderColor: colors.line,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  rowInfo: {
+    flex: 1,
+  },
+  rowTitle: {
+    ...typography.bodyMedium,
+    color: colors.ink,
+    fontWeight: '600',
+  },
+  rowSub: {
+    ...typography.bodySmall,
+    color: colors.ink3,
+    fontSize: 11,
+    marginTop: 2,
+  },
+  rowRight: {
+    alignItems: 'flex-end',
+  },
+  rowAmount: {
+    ...typography.monoMedium,
+    color: colors.ink,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  rowAmountIncome: {
+    color: colors.secondary,
+  },
+  rowType: {
+    ...typography.bodySmall,
+    color: colors.ink3,
+    fontSize: 10,
+  },
+  centerContent: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    padding: spacing.xl,
+  },
+  emptyContainer: {
+    backgroundColor: colors.surface,
+    borderColor: colors.line,
+    borderWidth: 1,
+    borderRadius: radius.md,
+    padding: spacing.xl,
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  iconCircle: {
+    width: 52,
+    height: 52,
+    borderRadius: radius.full,
+    backgroundColor: colors.surface2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.xxs,
+  },
+  emptyTitle: {
+    ...typography.titleSmall,
+    color: colors.ink,
+  },
+  emptySubtitle: {
+    ...typography.bodySmall,
+    color: colors.ink3,
+    textAlign: 'center',
+    maxWidth: 280,
+  },
+  emptyBtn: {
+    marginTop: spacing.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    height: 40,
+    paddingHorizontal: spacing.base,
+    borderRadius: radius.md,
+    backgroundColor: colors.surface2,
+    borderWidth: 1,
+    borderColor: colors.line,
+  },
+  emptyBtnText: {
+    ...typography.labelMedium,
+    color: colors.ink,
+  },
+  footer: {
+    alignItems: 'center',
+    paddingVertical: spacing.base,
+    gap: spacing.sm,
+  },
+  loadMoreBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    height: 40,
+    paddingHorizontal: spacing.lg,
+    borderRadius: radius.full,
+    backgroundColor: colors.surface2,
+    borderWidth: 1,
+    borderColor: colors.line,
+  },
+  loadMoreText: {
+    ...typography.labelMedium,
+    color: colors.ink2,
+  },
+  endText: {
+    ...typography.monoSmall,
+    fontSize: 10,
+    color: colors.ink3,
   },
 });
 ```
@@ -55137,6 +57729,146 @@ const styles = StyleSheet.create({
     fontFamily: fontFamilies.monoBold,
   },
 });
+```
+
+### `apps/mobile/src/features/transactions/ui/useHistoryPagination.ts`
+
+```typescript
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { HistoryQueryError } from '../domain/errors';
+import {
+  DEFAULT_HISTORY_PAGE_SIZE,
+  HistoryFilters,
+  HistoryItem,
+  HistoryTotals,
+} from '../domain/history';
+import { transactionsRepository } from '../data/transactions.repository';
+
+/** Estado completo de la consulta paginada del historial. */
+export interface HistoryPagination {
+  items: HistoryItem[];
+  totals: HistoryTotals;
+  /** Total de movimientos que cumplen los filtros (no solo los cargados). */
+  total: number;
+  hasMore: boolean;
+  /** Carga inicial o recarga por cambio de filtros. */
+  loading: boolean;
+  /** Carga de la siguiente página (scroll infinito). */
+  loadingMore: boolean;
+  error: string | null;
+  /** Re-consulta desde la primera página (pull-to-refresh / volver a la pantalla). */
+  reload: () => void;
+  /** Anexa la siguiente página usando el cursor keyset. */
+  loadMore: () => void;
+}
+
+const EMPTY_TOTALS: HistoryTotals = { incomeCents: 0, expenseCents: 0, netCents: 0 };
+
+function describeHistoryError(error: unknown): string {
+  if (error instanceof HistoryQueryError) return error.message;
+  if (error instanceof Error && error.message) return error.message;
+  return 'No se pudo cargar el historial. Reintenta en un momento.';
+}
+
+/**
+ * Encapsula la lectura paginada del historial (RF-009): reinicia la consulta
+ * cuando cambian los filtros y anexa páginas con el cursor keyset.
+ *
+ * La base de datos local es síncrona (< 50 ms por página), por lo que el
+ * resultado se aplica en un microtask: nunca se hace `setState` durante el
+ * render ni en el cuerpo del efecto.
+ */
+export function useHistoryPagination(
+  userId: string,
+  filters: HistoryFilters,
+  pageSize: number = DEFAULT_HISTORY_PAGE_SIZE
+): HistoryPagination {
+  const [items, setItems] = useState<HistoryItem[]>([]);
+  const [totals, setTotals] = useState<HistoryTotals>(EMPTY_TOTALS);
+  const [total, setTotal] = useState(0);
+  const [hasMore, setHasMore] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  const nextCursorRef = useRef<string | null>(null);
+  const loadingMoreRef = useRef(false);
+
+  const loadFirstPage = useCallback(() => {
+    try {
+      const page = transactionsRepository.searchHistory(userId, filters, { limit: pageSize });
+      nextCursorRef.current = page.nextCursor;
+      setItems(page.items);
+      setTotals(page.totals);
+      setTotal(page.total);
+      setHasMore(page.hasMore);
+      setError(null);
+    } catch (e) {
+      nextCursorRef.current = null;
+      setItems([]);
+      setTotals(EMPTY_TOTALS);
+      setTotal(0);
+      setHasMore(false);
+      setError(describeHistoryError(e));
+    } finally {
+      setLoading(false);
+    }
+  }, [userId, filters, pageSize]);
+
+  useEffect(() => {
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (cancelled) return;
+      setLoading(true);
+      loadFirstPage();
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [loadFirstPage, refreshKey]);
+
+  const loadMore = useCallback(() => {
+    const cursor = nextCursorRef.current;
+    if (!cursor || loadingMoreRef.current) return;
+
+    loadingMoreRef.current = true;
+    setLoadingMore(true);
+    try {
+      const page = transactionsRepository.searchHistory(userId, filters, {
+        limit: pageSize,
+        cursor,
+      });
+      nextCursorRef.current = page.nextCursor;
+      setItems((previous) => [...previous, ...page.items]);
+      setTotals(page.totals);
+      setTotal(page.total);
+      setHasMore(page.hasMore);
+      setError(null);
+    } catch (e) {
+      setError(describeHistoryError(e));
+    } finally {
+      loadingMoreRef.current = false;
+      setLoadingMore(false);
+    }
+  }, [userId, filters, pageSize]);
+
+  const reload = useCallback(() => {
+    setRefreshKey((key) => key + 1);
+  }, []);
+
+  return {
+    items,
+    totals,
+    total,
+    hasMore,
+    loading,
+    loadingMore,
+    error,
+    reload,
+    loadMore,
+  };
+}
 ```
 
 ### `apps/mobile/test/helpers/test-db.ts`

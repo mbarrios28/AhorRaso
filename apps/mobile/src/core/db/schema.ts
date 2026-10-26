@@ -129,6 +129,26 @@ export const outbox = sqliteTable(
   ]
 );
 
+// ==========================================
+// 6. TABLA: voice_learning (Autoaprendizaje adaptativo)
+// ==========================================
+export const voiceLearning = sqliteTable(
+  'voice_learning',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id').notNull(),
+    phrase: text('phrase').notNull(), // Frase o alias normalizado en minúsculas
+    categoryId: text('category_id').notNull(), // Categoría asociada
+    merchantName: text('merchant_name'), // Comercio asociado (opcional)
+    hitCount: integer('hit_count').default(1).notNull(), // Veces usado/confirmado
+    createdAt: text('created_at').notNull(),
+    updatedAt: text('updated_at').notNull(),
+  },
+  (table) => [
+    index('idx_voice_learning_user_phrase').on(table.userId, table.phrase),
+  ]
+);
+
 // Inferencia de tipos de TypeScript
 export type Profile = typeof profile.$inferSelect;
 export type InsertProfile = typeof profile.$inferInsert;
@@ -144,3 +164,6 @@ export type InsertTransaction = typeof transactions.$inferInsert;
 
 export type OutboxItem = typeof outbox.$inferSelect;
 export type InsertOutboxItem = typeof outbox.$inferInsert;
+
+export type VoiceLearning = typeof voiceLearning.$inferSelect;
+export type InsertVoiceLearning = typeof voiceLearning.$inferInsert;

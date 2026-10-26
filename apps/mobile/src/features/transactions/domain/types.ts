@@ -31,6 +31,17 @@ export const createIncomeSchema = z.object({
 
 export type CreateIncomeInput = z.input<typeof createIncomeSchema>;
 
+export interface ParsedVoiceExpense {
+  amountCents: number;
+  categoryName?: string;
+  categoryId?: string;
+  merchantName?: string;
+  paymentMethod: PaymentMethod;
+  note?: string;
+  occurredOn: string; // YYYY-MM-DD
+  confidence: number;
+  rawSegment: string;
+}
 
 export type { Transaction };
 

@@ -1,55 +1,81 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
   StyleSheet,
-  TextInput,
   Pressable,
   ScrollView,
   KeyboardAvoidingView,
   Platform,
-  Alert,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
+import * as Crypto from 'expo-crypto';
 import { colors, spacing, radius, typography, fontFamilies } from '@/core/theme';
 import { Icon } from '@/core/ui';
 import { DEV_USER_ID } from '@/core/dev/constants';
 import { db, merchants, profile } from '@/core/db';
 import { and, eq, isNull } from 'drizzle-orm';
-import { Category, CategorySelector } from '@/features/categories';
+import { Category, categoriesRepository } from '@/features/categories';
 import { transactionsRepository } from '../data/transactions.repository';
-import { PaymentMethod } from '../domain/types';
+import { voiceLearningRepository } from '../data/voiceLearning.repository';
+import { parseVoiceTranscript } from '../domain/voiceParser';
+import { ExpenseAccordionCard, ExpenseItemState } from './ExpenseAccordionCard';
+import { VoiceRecordingModal } from './VoiceRecordingModal';
 
 const FREQUENT_PLACES = ['Menú UNSA', 'Fotocopias', 'Combi', 'Tambo+'];
 
 export const NewExpenseScreen: React.FC = () => {
-  // Estado del formulario
-  const [amountStr, setAmountStr] = useState('15.50');
-  const [selectedCategory, setSelectedCategory] = useState<Category | null>(null);
-  const [place, setPlace] = useState('Menú UNSA');
+  const insets = useSafeAreaInsets();
+  // Lista de categorías y establecimientos
+  const [categoriesList, setCategoriesList] = useState<Category[]>([]);
   const [placesList, setPlacesList] = useState<string[]>(FREQUENT_PLACES);
-  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('digital');
-  const [note, setNote] = useState('');
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [selectedDateOffset, setSelectedDateOffset] = useState<0 | 1>(0); // 0 = Hoy, 1 = Ayer
   const [currentBalanceCents, setCurrentBalanceCents] = useState<number>(0);
+  const [selectedDateOffset, setSelectedDateOffset] = useState<0 | 1>(0); // 0 = Hoy, 1 = Ayer
 
-  // Cargar saldo actual del perfil y establecimientos guardados en SQLite
-  React.useEffect(() => {
+  // Estado del modal de voz y banner de IA
+  const [isVoiceModalOpen, setIsVoiceModalOpen] = useState(false);
+  const [aiBannerText, setAiBannerText] = useState<string | null>(null);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  // Lista dinámica de compras en formato acordeón
+  const [cards, setCards] = useState<ExpenseItemState[]>([
+    {
+      id: 'card-init-1',
+      amountStr: '',
+      selectedCategory: null,
+      place: '',
+      paymentMethod: 'digital',
+      note: '',
+      entryMethod: 'manual',
+    },
+  ]);
+  const [openCardId, setOpenCardId] = useState<string | null>('card-init-1');
+
+  // Inicialización de categorías y saldo de perfil
+  useEffect(() => {
     let mounted = true;
-    // Lecturas síncronas sobre SQLite local; se difieren al microtask para no
-    // ejecutar setState directamente en el cuerpo del efecto (regla
-    // react-hooks/set-state-in-effect), manteniendo la misma conducta.
     queueMicrotask(() => {
       try {
-        // 1. Saldo actual
+        // 1. Categorías del usuario
+        const cats = categoriesRepository.getByUser(DEV_USER_ID, 'expense');
+        if (mounted) {
+          setCategoriesList(cats);
+          // Asignar categoría inicial por defecto si aún no está asignada
+          setCards((prev) =>
+            prev.map((c) =>
+              c.selectedCategory ? c : { ...c, selectedCategory: cats[0] || null }
+            )
+          );
+        }
+
+        // 2. Saldo actual del usuario
         const userProf = db.select().from(profile).where(eq(profile.id, DEV_USER_ID)).get();
         if (mounted && userProf) {
           setCurrentBalanceCents(userProf.initialBalanceCents);
         }
 
-        // 2. Establecimientos guardados
+        // 3. Establecimientos guardados
         const saved = db
           .select()
           .from(merchants)
@@ -61,9 +87,10 @@ export const NewExpenseScreen: React.FC = () => {
           setPlacesList(combined);
         }
       } catch (e) {
-        console.error('Error al inicializar formulario de gasto:', e);
+        console.error('Error al inicializar NewExpenseScreen:', e);
       }
     });
+
     return () => {
       mounted = false;
     };
@@ -76,46 +103,165 @@ export const NewExpenseScreen: React.FC = () => {
   }
   const occurredOnISO = targetDate.toISOString().split('T')[0];
 
-  // Cálculo de montos
-  const parsedAmount = parseFloat(amountStr) || 0;
-  const amountCents = Math.round(parsedAmount * 100);
+  // Cálculo del total acumulado en todas las cards
+  const totalAmount = cards.reduce((sum, c) => {
+    const val = parseFloat(c.amountStr) || 0;
+    return sum + val;
+  }, 0);
+  const totalCents = Math.round(totalAmount * 100);
 
-  // Atajos para sumar al monto (+5, +10, +20)
-  const handleAddAmount = (extra: number) => {
-    const current = parseFloat(amountStr) || 0;
-    const next = (current + extra).toFixed(2);
-    setAmountStr(next);
+  // Toggle de acordeón para una card
+  const handleToggleCard = (cardId: string) => {
+    setOpenCardId((prev) => (prev === cardId ? null : cardId));
   };
 
-  const handleSave = () => {
+  // Añadir una nueva card vacía al acordeón
+  const handleAddNewCard = () => {
+    const newId = Crypto.randomUUID();
+    const newCard: ExpenseItemState = {
+      id: newId,
+      amountStr: '',
+      selectedCategory: null,
+      place: '',
+      paymentMethod: 'digital',
+      note: '',
+      entryMethod: 'manual',
+    };
+    setCards((prev) => [...prev, newCard]);
+    setOpenCardId(newId);
+  };
+
+  // Eliminar una card del acordeón
+  const handleDeleteCard = (cardId: string) => {
+    if (cards.length <= 1) return;
+    setCards((prev) => prev.filter((c) => c.id !== cardId));
+    if (openCardId === cardId) {
+      setOpenCardId(null);
+    }
+  };
+
+  // Actualizar los datos de una card
+  const handleUpdateCard = (cardId: string, updated: Partial<ExpenseItemState>) => {
+    setErrorMsg(null);
+    setCards((prev) =>
+      prev.map((c) => (c.id === cardId ? { ...c, ...updated } : c))
+    );
+  };
+
+  // Procesamiento del dictado por voz (HU-10)
+  const handleProcessVoiceTranscript = (transcript: string) => {
+    try {
+      // 1. Obtener aprendizajes adaptativos del usuario desde SQLite
+      const learnedMatches = voiceLearningRepository.getAll(DEV_USER_ID).map((l) => ({
+        phrase: l.phrase,
+        categoryId: l.categoryId,
+        merchantName: l.merchantName,
+        hitCount: l.hitCount,
+      }));
+
+      // 2. Procesar transcripción con el parser NLP no rígido
+      const parsedExpenses = parseVoiceTranscript(transcript, {
+        userCategories: categoriesList.map((c) => ({ id: c.id, name: c.name, icon: c.icon })),
+        learnedMatches,
+        defaultDate: occurredOnISO,
+      });
+
+      if (parsedExpenses.length === 0) return;
+
+      // 3. Convertir resultados a ExpenseItemState
+      const newCards: ExpenseItemState[] = parsedExpenses.map((pe) => {
+        const cat =
+          categoriesList.find((c) => c.id === pe.categoryId) ||
+          categoriesList.find(
+            (c) => c.name.toLowerCase() === (pe.categoryName || '').toLowerCase()
+          ) ||
+          categoriesList[0] ||
+          null;
+
+        return {
+          id: Crypto.randomUUID(),
+          amountStr: (pe.amountCents / 100).toFixed(2),
+          selectedCategory: cat,
+          place: pe.merchantName || '',
+          paymentMethod: pe.paymentMethod,
+          note: pe.note || '',
+          entryMethod: 'voice',
+        };
+      });
+
+      // 4. Reemplazar o poblar la lista
+      setCards(newCards);
+      setOpenCardId(newCards[0].id);
+      setAiBannerText(
+        `Dictado procesado: ${newCards.length} ${
+          newCards.length === 1 ? 'compra organizada' : 'compras organizadas'
+        }`
+      );
+    } catch (e: any) {
+      setErrorMsg(e?.message || 'Error al procesar el dictado de voz');
+    }
+  };
+
+  // Guardar todas las compras de la lista
+  const handleSaveAll = () => {
     setErrorMsg(null);
 
-    // Validación básica de entrada
-    if (amountCents <= 0) {
-      setErrorMsg('Ingresa un monto válido mayor a 0');
+    // Validaciones
+    if (cards.length === 0) {
+      setErrorMsg('No hay compras para registrar');
       return;
     }
 
-    if (!selectedCategory) {
-      setErrorMsg('Debes seleccionar una categoría');
-      return;
+    for (let i = 0; i < cards.length; i++) {
+      const card = cards[i];
+      const parsed = parseFloat(card.amountStr) || 0;
+      const cents = Math.round(parsed * 100);
+
+      if (cents <= 0) {
+        setErrorMsg(`La compra #${i + 1} tiene un monto inválido`);
+        setOpenCardId(card.id);
+        return;
+      }
+
+      if (!card.selectedCategory) {
+        setErrorMsg(`La compra #${i + 1} necesita una categoría`);
+        setOpenCardId(card.id);
+        return;
+      }
     }
 
     try {
-      transactionsRepository.createExpense(DEV_USER_ID, {
-        amountCents,
-        occurredOn: occurredOnISO,
-        categoryId: selectedCategory.id,
-        merchantName: place.trim() || undefined,
-        paymentMethod,
-        note: note.trim() || undefined,
-        entryMethod: 'manual',
-      });
+      // Guardar cada gasto en la base de datos local y registrar autoaprendizaje
+      for (const card of cards) {
+        const parsed = parseFloat(card.amountStr) || 0;
+        const cents = Math.round(parsed * 100);
 
-      // Retornar a la vista anterior tras registro exitoso
+        transactionsRepository.createExpense(DEV_USER_ID, {
+          amountCents: cents,
+          occurredOn: occurredOnISO,
+          categoryId: card.selectedCategory!.id,
+          merchantName: card.place.trim() || undefined,
+          paymentMethod: card.paymentMethod,
+          note: card.note.trim() || undefined,
+          entryMethod: card.entryMethod,
+        });
+
+        // Autoaprendizaje adaptativo: registrar el patrón frase/comercio -> categoría
+        const learnCandidate = card.place.trim() || card.note.trim();
+        if (learnCandidate.length >= 3) {
+          voiceLearningRepository.learnPhrase(
+            DEV_USER_ID,
+            learnCandidate,
+            card.selectedCategory!.id,
+            card.place.trim() || undefined
+          );
+        }
+      }
+
+      // Regresar tras registro exitoso
       router.back();
     } catch (e: any) {
-      setErrorMsg(e?.message || 'Error al registrar el gasto');
+      setErrorMsg(e?.message || 'Error al guardar los gastos');
     }
   };
 
@@ -125,22 +271,33 @@ export const NewExpenseScreen: React.FC = () => {
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={styles.keyboardView}
       >
-        {/* Header */}
+        {/* Header con botón de voz integrado */}
         <View style={styles.header}>
+          <View style={styles.headerLeft}>
+            <Pressable
+              onPress={() => router.back()}
+              style={styles.headerButton}
+              accessibilityLabel="Cerrar formulario"
+            >
+              <Icon name="X" size={20} color={colors.ink2} />
+            </Pressable>
+            <View>
+              <Text style={styles.headerTitle}>Registrar gastos</Text>
+              <Text style={styles.headerSubtitle}>
+                {cards.length} {cards.length === 1 ? 'compra en lista' : 'compras en lista'}
+              </Text>
+            </View>
+          </View>
+
+          {/* Botón de Dictado por Voz Inteligente */}
           <Pressable
-            onPress={() => router.back()}
-            style={styles.headerButton}
-            accessibilityLabel="Cerrar formulario"
+            onPress={() => setIsVoiceModalOpen(true)}
+            style={styles.micBtn}
+            accessibilityRole="button"
+            accessibilityLabel="Activar dictado por voz"
           >
-            <Icon name="X" size={22} color={colors.ink2} />
-          </Pressable>
-          <Text style={styles.headerTitle}>Nuevo gasto</Text>
-          <Pressable
-            onPress={() => Alert.alert('Dictado por voz', 'RF-003 en desarrollo por Dev C')}
-            style={styles.headerButton}
-            accessibilityLabel="Voz"
-          >
-            <Icon name="Mic" size={20} color={colors.ink2} />
+            <Icon name="Mic" size={17} color={colors.primary} />
+            <Text style={styles.micBtnText}>Dictar</Text>
           </Pressable>
         </View>
 
@@ -148,40 +305,7 @@ export const NewExpenseScreen: React.FC = () => {
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.scrollContent}
         >
-          {/* 1. Sección de Monto Hero */}
-          <View style={styles.amountSection}>
-            <Text style={styles.sectionLabel}>MONTO</Text>
-            <View style={styles.amountInputRow}>
-              <Text style={styles.currencyPrefix}>S/</Text>
-              <TextInput
-                value={amountStr}
-                onChangeText={(val) => {
-                  setErrorMsg(null);
-                  // Solo permitir números y un punto decimal
-                  const sanitized = val.replace(/[^0-9.]/g, '');
-                  setAmountStr(sanitized);
-                }}
-                keyboardType="decimal-pad"
-                style={styles.amountInput}
-                selectTextOnFocus
-              />
-            </View>
-
-            {/* Botones de incremento rápido */}
-            <View style={styles.quickAddRow}>
-              {[5, 10, 20].map((add) => (
-                <Pressable
-                  key={add}
-                  onPress={() => handleAddAmount(add)}
-                  style={styles.quickChip}
-                >
-                  <Text style={styles.quickChipText}>+ {add}</Text>
-                </Pressable>
-              ))}
-            </View>
-          </View>
-
-          {/* 2. Fecha y Estado */}
+          {/* Fecha y Estado Offline */}
           <View style={styles.metaRow}>
             <View style={styles.dateSelector}>
               <Pressable
@@ -225,121 +349,69 @@ export const NewExpenseScreen: React.FC = () => {
             </View>
           </View>
 
-          {/* 3. Selector de Categorías (Bloque 4) */}
-          <View style={styles.section}>
-            <Text style={styles.sectionLabel}>CATEGORÍA</Text>
-            <CategorySelector
-              selectedId={selectedCategory?.id || null}
-              onSelect={(cat) => setSelectedCategory(cat)}
-              type="expense"
-            />
-          </View>
-
-          {/* 4. Establecimiento */}
-          <View style={styles.section}>
-            <Text style={styles.sectionLabel}>ESTABLECIMIENTO</Text>
-            <View style={styles.inputContainer}>
-              <Icon name="Store" size={18} color={colors.ink3} />
-              <TextInput
-                value={place}
-                onChangeText={setPlace}
-                placeholder="¿Dónde compraste?"
-                placeholderTextColor={colors.ink3}
-                style={styles.textInput}
-              />
-            </View>
-
-            {/* Chips rápidos de establecimientos */}
-            <View style={styles.placesRow}>
-              {placesList.map((item) => (
-                <Pressable
-                  key={item}
-                  onPress={() => setPlace(item)}
-                  style={[
-                    styles.placeChip,
-                    place === item && styles.placeChipSelected,
-                  ]}
-                >
-                  <Text
-                    style={[
-                      styles.placeChipText,
-                      place === item && styles.placeChipTextSelected,
-                    ]}
-                  >
-                    {item}
-                  </Text>
-                </Pressable>
-              ))}
-            </View>
-          </View>
-
-          {/* 5. Método de Pago (Segmented Control) */}
-          <View style={styles.section}>
-            <Text style={styles.sectionLabel}>MÉTODO DE PAGO</Text>
-            <View style={styles.segmentedControl}>
+          {/* Banner de Feedback de IA tras dictado */}
+          {aiBannerText && (
+            <View style={styles.aiBanner}>
+              <View style={styles.aiBannerLeft}>
+                <Icon name="Sparkles" size={18} color={colors.primary} />
+                <Text style={styles.aiBannerText}>{aiBannerText}</Text>
+              </View>
               <Pressable
-                onPress={() => setPaymentMethod('cash')}
-                style={[
-                  styles.segmentTab,
-                  paymentMethod === 'cash' && styles.segmentTabActive,
-                ]}
+                onPress={() => setAiBannerText(null)}
+                style={styles.closeAiBannerBtn}
               >
-                <Icon
-                  name="Banknote"
-                  size={16}
-                  color={paymentMethod === 'cash' ? colors.ink : colors.ink3}
-                />
-                <Text
-                  style={[
-                    styles.segmentText,
-                    paymentMethod === 'cash' && styles.segmentTextActive,
-                  ]}
-                >
-                  Efectivo
-                </Text>
-              </Pressable>
-
-              <Pressable
-                onPress={() => setPaymentMethod('digital')}
-                style={[
-                  styles.segmentTab,
-                  paymentMethod === 'digital' && styles.segmentTabActive,
-                ]}
-              >
-                <Icon
-                  name="Smartphone"
-                  size={16}
-                  color={paymentMethod === 'digital' ? colors.ink : colors.ink3}
-                />
-                <Text
-                  style={[
-                    styles.segmentText,
-                    paymentMethod === 'digital' && styles.segmentTextActive,
-                  ]}
-                >
-                  Yape / Plin
-                </Text>
+                <Icon name="X" size={16} color={colors.ink3} />
               </Pressable>
             </View>
+          )}
+
+          {/* Encabezado de la lista con botón para agregar otra compra */}
+          <View style={styles.listHeaderRow}>
+            <Text style={styles.counterTitle}>
+              {cards.length} {cards.length === 1 ? 'COMPRA EN ESTA SESIÓN' : 'COMPRAS EN ESTA SESIÓN'}
+            </Text>
+            <Pressable
+              onPress={handleAddNewCard}
+              style={styles.addInlineBtn}
+              accessibilityLabel="Añadir otra compra"
+            >
+              <Icon name="PlusCircle" size={16} color={colors.primary} />
+              <Text style={styles.addInlineBtnText}>Añadir otra compra</Text>
+            </Pressable>
           </View>
 
-          {/* 6. Nota Opcional */}
-          <View style={styles.section}>
-            <Text style={styles.sectionLabel}>NOTA</Text>
-            <View style={styles.inputContainer}>
-              <Icon name="FileText" size={18} color={colors.ink3} />
-              <TextInput
-                value={note}
-                onChangeText={setNote}
-                placeholder="Almuerzo con compañeros (opcional)"
-                placeholderTextColor={colors.ink3}
-                style={styles.textInput}
-                maxLength={200}
+          {/* Lista de Acordeones de Compra */}
+          <View style={styles.accordionContainer}>
+            {cards.map((card, idx) => (
+              <ExpenseAccordionCard
+                key={card.id}
+                card={card}
+                index={idx}
+                isOpen={openCardId === card.id}
+                canDelete={cards.length > 1}
+                onToggle={() => handleToggleCard(card.id)}
+                onDelete={() => handleDeleteCard(card.id)}
+                onUpdate={(updated) => handleUpdateCard(card.id, updated)}
+                categoriesList={categoriesList}
+                placesList={placesList}
               />
-            </View>
+            ))}
           </View>
 
-          {/* Error visual si existe */}
+          {/* Botón Inferior para Añadir Nueva Card */}
+          <Pressable
+            onPress={handleAddNewCard}
+            style={styles.addBottomDashedBtn}
+            accessibilityRole="button"
+            accessibilityLabel="Añadir otra compra a esta lista"
+          >
+            <Icon name="PlusCircle" size={18} color={colors.primary} />
+            <Text style={styles.addBottomDashedBtnText}>
+              Añadir otra compra a esta lista
+            </Text>
+          </Pressable>
+
+          {/* Mensaje de error visual */}
           {errorMsg && (
             <View style={styles.errorContainer}>
               <Icon name="AlertCircle" size={16} color={colors.danger} />
@@ -347,21 +419,21 @@ export const NewExpenseScreen: React.FC = () => {
             </View>
           )}
 
-          {/* Hint de impacto en saldo en tiempo real */}
+          {/* Impacto en el Saldo en Tiempo Real */}
           <View
             style={[
               styles.hintCard,
-              currentBalanceCents - amountCents < 0 && styles.hintCardWarning,
+              currentBalanceCents - totalCents < 0 && styles.hintCardWarning,
             ]}
           >
             <Icon
-              name={currentBalanceCents - amountCents < 0 ? 'AlertTriangle' : 'PiggyBank'}
+              name={currentBalanceCents - totalCents < 0 ? 'AlertTriangle' : 'Wallet'}
               size={18}
-              color={currentBalanceCents - amountCents < 0 ? colors.tertiary : colors.secondary}
+              color={currentBalanceCents - totalCents < 0 ? colors.tertiary : colors.secondary}
             />
             <View style={styles.hintContent}>
               <Text style={styles.hintTitle}>
-                {currentBalanceCents - amountCents < 0
+                {currentBalanceCents - totalCents < 0
                   ? 'Excede tu saldo disponible'
                   : 'Impacto en tu saldo'}
               </Text>
@@ -370,34 +442,44 @@ export const NewExpenseScreen: React.FC = () => {
                 <Text
                   style={[
                     styles.hintHighlight,
-                    currentBalanceCents - amountCents < 0 && { color: colors.tertiary },
+                    currentBalanceCents - totalCents < 0 && { color: colors.tertiary },
                   ]}
                 >
-                  S/ {((currentBalanceCents - amountCents) / 100).toFixed(2)}
+                  S/ {((currentBalanceCents - totalCents) / 100).toFixed(2)}
                 </Text>
               </Text>
             </View>
           </View>
         </ScrollView>
 
-        {/* 7. Botón CTA Inferior */}
-        <View style={styles.footer}>
+        {/* Sticky Footer Dinámico con Total General */}
+        <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, 14) }]}>
           <Pressable
-            onPress={handleSave}
+            onPress={handleSaveAll}
             style={({ pressed }) => [
               styles.saveBtn,
               pressed && { opacity: 0.9, transform: [{ scale: 0.99 }] },
             ]}
+            accessibilityRole="button"
+            accessibilityLabel={`Guardar ${cards.length} compra(s) por un total de S/ ${totalAmount.toFixed(2)}`}
           >
+            <Icon name="Check" size={20} color="#0D0D0F" />
             <Text style={styles.saveBtnText}>
-              Guardar gasto ·{' '}
-              <Text style={styles.saveBtnAmount}>
-                S/ {parsedAmount.toFixed(2)}
-              </Text>
+              {cards.length === 1 ? 'Guardar compra' : `Guardar ${cards.length} compras`} ·{' '}
+              <Text style={styles.saveBtnAmount}>S/ {totalAmount.toFixed(2)}</Text>
             </Text>
           </Pressable>
         </View>
       </KeyboardAvoidingView>
+
+      {/* Modal de Dictado por Voz Manos Libres montado bajo demanda */}
+      {isVoiceModalOpen && (
+        <VoiceRecordingModal
+          visible={isVoiceModalOpen}
+          onClose={() => setIsVoiceModalOpen(false)}
+          onProcessTranscript={handleProcessVoiceTranscript}
+        />
+      )}
     </SafeAreaView>
   );
 };
@@ -405,19 +487,25 @@ export const NewExpenseScreen: React.FC = () => {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: colors.bg,
+    backgroundColor: '#0D0D0F',
   },
   keyboardView: {
     flex: 1,
   },
   header: {
-    height: 52,
+    height: 56,
     paddingHorizontal: spacing.gutter,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     borderBottomWidth: 1,
-    borderBottomColor: colors.line,
+    borderBottomColor: 'rgba(42, 42, 47, 0.4)',
+    backgroundColor: '#0D0D0F',
+  },
+  headerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
   },
   headerButton: {
     width: 36,
@@ -429,64 +517,44 @@ const styles = StyleSheet.create({
   headerTitle: {
     ...typography.titleSmall,
     color: colors.ink,
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  headerSubtitle: {
+    fontFamily: fontFamilies.monoMedium,
+    fontSize: 10,
+    color: colors.ink3,
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+  },
+  micBtn: {
+    height: 36,
+    paddingHorizontal: 14,
+    borderRadius: radius.full,
+    backgroundColor: 'rgba(16, 185, 129, 0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(16, 185, 129, 0.3)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  micBtnText: {
+    fontFamily: fontFamilies.monoBold,
+    fontSize: 11,
+    color: colors.primary,
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
   },
   scrollContent: {
     padding: spacing.gutter,
     paddingBottom: 40,
     gap: spacing.base,
   },
-  amountSection: {
-    alignItems: 'center',
-    paddingVertical: spacing.md,
-  },
-  sectionLabel: {
-    ...typography.labelSmall,
-    color: colors.ink3,
-    marginBottom: spacing.xs,
-  },
-  amountInputRow: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    gap: spacing.xs,
-    justifyContent: 'center',
-  },
-  currencyPrefix: {
-    ...typography.monoMedium,
-    fontSize: 22,
-    color: colors.ink3,
-  },
-  amountInput: {
-    ...typography.amountHero,
-    color: colors.ink,
-    minWidth: 180,
-    textAlign: 'center',
-    padding: 0,
-  },
-  quickAddRow: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-    marginTop: spacing.md,
-  },
-  quickChip: {
-    paddingHorizontal: spacing.base,
-    height: 32,
-    borderRadius: radius.full,
-    backgroundColor: colors.surface2,
-    borderColor: colors.line,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  quickChipText: {
-    ...typography.monoSmall,
-    color: colors.ink2,
-    fontSize: 12,
-  },
   metaRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingBottom: spacing.xs,
+    paddingBottom: spacing.xxs,
   },
   dateSelector: {
     flexDirection: 'row',
@@ -515,7 +583,7 @@ const styles = StyleSheet.create({
     fontFamily: fontFamilies.bodySemiBold,
   },
   dateISO: {
-    ...typography.monoSmall,
+    fontFamily: fontFamilies.monoMedium,
     fontSize: 11,
     color: colors.ink3,
     marginLeft: 2,
@@ -524,7 +592,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: colors.surface,
+    backgroundColor: '#18181B',
     paddingHorizontal: spacing.sm,
     paddingVertical: 2,
     borderRadius: radius.full,
@@ -536,85 +604,82 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary,
   },
   offlineText: {
-    ...typography.monoSmall,
+    fontFamily: fontFamilies.monoMedium,
     fontSize: 10,
     color: colors.ink3,
   },
-  section: {
-    gap: spacing.xs,
-  },
-  inputContainer: {
+  aiBanner: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.sm,
-    backgroundColor: colors.surface2,
-    borderColor: colors.line,
+    justifyContent: 'space-between',
+    padding: spacing.sm,
+    borderRadius: 14,
+    backgroundColor: 'rgba(16, 185, 129, 0.1)',
     borderWidth: 1,
-    borderRadius: radius.md,
-    paddingHorizontal: spacing.base,
-    height: 48,
+    borderColor: 'rgba(16, 185, 129, 0.3)',
   },
-  textInput: {
+  aiBannerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
     flex: 1,
-    color: colors.ink,
-    fontFamily: typography.bodyMedium.fontFamily,
-    fontSize: 14,
-    padding: 0,
   },
-  placesRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.xs,
-    marginTop: spacing.xxs,
-  },
-  placeChip: {
-    paddingHorizontal: spacing.md,
-    height: 28,
-    borderRadius: radius.full,
-    backgroundColor: colors.surface2,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  placeChipSelected: {
-    backgroundColor: colors.surface3,
-    borderColor: colors.lineFocus,
-    borderWidth: 1,
-  },
-  placeChipText: {
+  aiBannerText: {
     ...typography.bodySmall,
-    fontSize: 11,
-    color: colors.ink3,
-  },
-  placeChipTextSelected: {
     color: colors.ink,
+    fontSize: 12,
     fontWeight: '600',
   },
-  segmentedControl: {
+  closeAiBannerBtn: {
+    width: 24,
+    height: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  listHeaderRow: {
     flexDirection: 'row',
-    backgroundColor: colors.surface2,
-    borderRadius: radius.md,
-    padding: 3,
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 2,
+  },
+  counterTitle: {
+    fontFamily: fontFamilies.monoMedium,
+    fontSize: 10.5,
+    color: colors.ink3,
+    letterSpacing: 1.2,
+  },
+  addInlineBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: 4,
   },
-  segmentTab: {
-    flex: 1,
-    height: 40,
-    borderRadius: radius.sm,
+  addInlineBtnText: {
+    ...typography.bodySmall,
+    color: colors.primary,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  accordionContainer: {
+    gap: spacing.base,
+  },
+  addBottomDashedBtn: {
+    width: '100%',
+    paddingVertical: spacing.base,
+    borderRadius: 18,
+    backgroundColor: '#18181B',
+    borderWidth: 1,
+    borderColor: '#2A2A2F',
+    borderStyle: 'dashed',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: spacing.xs,
+    gap: 8,
+    marginVertical: spacing.xxs,
   },
-  segmentTabActive: {
-    backgroundColor: colors.surface,
-  },
-  segmentText: {
+  addBottomDashedBtnText: {
     ...typography.bodyMedium,
-    color: colors.ink3,
-    fontSize: 13,
-  },
-  segmentTextActive: {
-    color: colors.ink,
+    color: colors.primary,
+    fontSize: 13.5,
     fontWeight: '600',
   },
   errorContainer: {
@@ -635,12 +700,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: spacing.sm,
-    backgroundColor: colors.surface,
-    borderColor: colors.line,
+    backgroundColor: '#18181B',
+    borderColor: 'rgba(42, 42, 47, 0.5)',
     borderWidth: 1,
     padding: spacing.base,
-    borderRadius: radius.md,
-    marginTop: spacing.xs,
+    borderRadius: 16,
   },
   hintCardWarning: {
     borderColor: 'rgba(223, 108, 107, 0.4)',
@@ -669,21 +733,28 @@ const styles = StyleSheet.create({
     padding: spacing.gutter,
     paddingBottom: Platform.OS === 'ios' ? spacing.gutter : spacing.md,
     borderTopWidth: 1,
-    borderTopColor: colors.line,
-    backgroundColor: colors.bg,
+    borderTopColor: 'rgba(42, 42, 47, 0.3)',
+    backgroundColor: '#0D0D0F',
   },
   saveBtn: {
-    height: 52,
-    borderRadius: radius.lg,
+    height: 54,
+    borderRadius: 16,
     backgroundColor: colors.primary,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    gap: 8,
+    shadowColor: colors.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 4,
   },
   saveBtnText: {
     ...typography.labelLarge,
     color: '#0D0D0F',
     fontWeight: '700',
-    fontSize: 16,
+    fontSize: 15.5,
   },
   saveBtnAmount: {
     fontFamily: fontFamilies.monoBold,

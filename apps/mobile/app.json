@@ -8,7 +8,11 @@
     "scheme": "ahorraso",
     "userInterfaceStyle": "dark",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSSpeechRecognitionUsageDescription": "Permite a AhorRaso reconocer y transcribir tus gastos hablados.",
+        "NSMicrophoneUsageDescription": "Permite a AhorRaso acceder a tu micrófono para registrar gastos por voz."
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -17,7 +21,11 @@
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "android.permission.RECORD_AUDIO"
+      ],
+      "package": "com.jcode123.mobile"
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -25,7 +33,17 @@
     "plugins": [
       "expo-router",
       "expo-font",
-      "expo-sqlite"
+      "expo-sqlite",
+      [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "Permite a AhorRaso acceder a tu micrófono para registrar gastos por voz.",
+          "speechRecognitionPermission": "Permite a AhorRaso reconocer y transcribir tus gastos hablados.",
+          "androidSpeechServicePackages": [
+            "com.google.android.googlequicksearchbox"
+          ]
+        }
+      ]
     ]
   }
 }

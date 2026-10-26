@@ -137,6 +137,20 @@ export function initDatabase(): void {
     );
 
     CREATE INDEX IF NOT EXISTS idx_outbox_queue ON outbox (next_attempt_at, created_at);
+
+    -- Tabla: voice_learning (RF-003: Autoaprendizaje adaptativo de voz)
+    CREATE TABLE IF NOT EXISTS voice_learning (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      phrase TEXT NOT NULL,
+      category_id TEXT NOT NULL,
+      merchant_name TEXT,
+      hit_count INTEGER DEFAULT 1 NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_voice_learning_user_phrase ON voice_learning (user_id, phrase);
   `);
 
   // 2. Sembrado de Profile inicial (DEV_USER_ID)
