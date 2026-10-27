@@ -55,7 +55,9 @@ export function initDatabase(): void {
       onboarding_done INTEGER DEFAULT 0 NOT NULL,
       created_at TEXT NOT NULL,
       client_updated_at TEXT NOT NULL,
-      updated_at TEXT
+      updated_at TEXT,
+      password_hash TEXT,
+      pin_hash TEXT
     );
 
     -- Tabla: categories
@@ -165,6 +167,8 @@ export function initDatabase(): void {
     );
   }
 
+
+
   // 3. Sembrado de Categorías iniciales por defecto (idempotente por fila).
   //    Se inserta únicamente si no existe una categoría ACTIVA con el mismo
   //    (nombre normalizado, tipo). Así se respeta el índice único parcial
@@ -193,7 +197,11 @@ export function initDatabase(): void {
     inserted += 1;
   }
 
+
+
   if (inserted > 0) {
     console.info(`[initDatabase] Semilla de categorías: ${inserted} categorías por defecto añadidas.`);
   }
+
+
 }
