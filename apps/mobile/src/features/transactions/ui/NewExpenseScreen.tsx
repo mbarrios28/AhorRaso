@@ -22,6 +22,7 @@ import { voiceLearningRepository } from '../data/voiceLearning.repository';
 import { parseVoiceTranscript } from '../domain/voiceParser';
 import { ExpenseAccordionCard, ExpenseItemState } from './ExpenseAccordionCard';
 import { VoiceRecordingModal } from './VoiceRecordingModal';
+import { alertsRepository } from '@/features/alerts';
 
 const FREQUENT_PLACES = ['Menú UNSA', 'Fotocopias', 'Combi', 'Tambo+'];
 
@@ -256,6 +257,13 @@ export const NewExpenseScreen: React.FC = () => {
             card.place.trim() || undefined
           );
         }
+      }
+
+      // Evaluación reactiva de alertas tras registrar los gastos (RF-011 / RNF-010)
+      try {
+        alertsRepository.evaluateBudgetAlerts(DEV_USER_ID);
+      } catch (e) {
+        console.error('Error al evaluar alertas tras registrar gasto:', e);
       }
 
       // Regresar tras registro exitoso

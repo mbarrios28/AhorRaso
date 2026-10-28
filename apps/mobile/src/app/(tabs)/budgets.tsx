@@ -8,17 +8,40 @@ import { DEV_USER_ID } from '@/core/dev/constants';
 import { budgetsRepository } from '@/features/budgets/data/budgets.repository';
 import { BudgetWithCategory } from '@/features/budgets/domain/types';
 import { CreateBudgetModal } from '@/features/budgets/ui/CreateBudgetModal';
+import {
+  alertsRepository,
+  AlertBanner,
+  NotificationSettingsModal,
+  BudgetAlertTriggered,
+} from '@/features/alerts';
 
 export default function BudgetsTab() {
   const [activeBudgets, setActiveBudgets] = useState<BudgetWithCategory[]>([]);
   const [modalVisible, setModalVisible] = useState(false);
+  const [activeAlerts, setActiveAlerts] = useState<BudgetAlertTriggered[]>([]);
+  const [settingsModalVisible, setSettingsModalVisible] = useState(false);
 
   const loadBudgets = useCallback(() => {
     try {
       const list = budgetsRepository.listActive(DEV_USER_ID);
       setActiveBudgets(list);
+
+      // Evaluación reactiva de alertas de presupuesto (RF-011)
+      const evalResult = alertsRepository.evaluateBudgetAlerts(DEV_USER_ID);
+      const recent = alertsRepository.getRecentAlerts(DEV_USER_ID, 3);
+      const combined = [...evalResult.alerts];
+      for (const r of recent) {
+        if (
+          !combined.some(
+            (c) => c.budgetId === r.budgetId && c.thresholdPercent === r.thresholdPercent
+          )
+        ) {
+          combined.push(r);
+        }
+      }
+      setActiveAlerts(combined);
     } catch (e) {
-      console.error('Error al cargar presupuestos:', e);
+      console.error('Error al cargar presupuestos y alertas:', e);
     }
   }, []);
 
@@ -58,16 +81,34 @@ export default function BudgetsTab() {
             <Text style={styles.headerTitle}>Presupuestos</Text>
             <Text style={styles.headerSubtitle}>Límites de gasto por categoría</Text>
           </View>
-          <Pressable
-            style={styles.addButton}
-            onPress={() => setModalVisible(true)}
-            accessibilityRole="button"
-            accessibilityLabel="Establecer presupuesto"
-          >
-            <Icon name="Plus" size={16} color="#0D0D0F" />
-            <Text style={styles.addButtonText}>Establecer</Text>
-          </Pressable>
+          <View style={styles.headerButtons}>
+            <Pressable
+              style={styles.bellButton}
+              onPress={() => setSettingsModalVisible(true)}
+              accessibilityRole="button"
+              accessibilityLabel="Configurar alertas y umbrales"
+            >
+              <Icon name="Bell" size={16} color={colors.primary} />
+            </Pressable>
+            <Pressable
+              style={styles.addButton}
+              onPress={() => setModalVisible(true)}
+              accessibilityRole="button"
+              accessibilityLabel="Establecer presupuesto"
+            >
+              <Icon name="Plus" size={16} color="#0D0D0F" />
+              <Text style={styles.addButtonText}>Establecer</Text>
+            </Pressable>
+          </View>
         </View>
+
+        {/* Banner de Alertas Reactivas (RF-011 / RNF-010) */}
+        <AlertBanner
+          alerts={activeAlerts}
+          onDismiss={(alertId) =>
+            setActiveAlerts((prev) => prev.filter((a) => a.id !== alertId))
+          }
+        />
 
         {/* Card Resumen General */}
         <View style={styles.summaryCard}>
@@ -202,10 +243,19 @@ export default function BudgetsTab() {
         </View>
       </ScrollView>
 
-      {/* Modal para Crear Presupuesto */}
+      {/* Modal para Crear Presupuesto (RF-006) */}
       <CreateBudgetModal
         visible={modalVisible}
         onClose={() => setModalVisible(false)}
+        onSaved={() => {
+          loadBudgets();
+        }}
+      />
+
+      {/* Modal de Configuración de Alertas y Umbrales (RF-010) */}
+      <NotificationSettingsModal
+        visible={settingsModalVisible}
+        onClose={() => setSettingsModalVisible(false)}
         onSaved={() => {
           loadBudgets();
         }}
@@ -239,6 +289,21 @@ const styles = StyleSheet.create({
     ...typography.bodySmall,
     color: colors.ink3,
     marginTop: 2,
+  },
+  headerButtons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  bellButton: {
+    width: 32,
+    height: 32,
+    borderRadius: radius.md,
+    backgroundColor: colors.surface2,
+    borderWidth: 1,
+    borderColor: colors.line,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   addButton: {
     flexDirection: 'row',

@@ -4,12 +4,14 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useFocusEffect } from 'expo-router';
 import { colors, spacing, radius, typography } from '@/core/theme';
 import { Icon } from '@/core/ui';
+import { NotificationSettingsModal } from '@/features/alerts';
 import { db, profile, Profile } from '@/core/db';
 import { DEV_USER_ID } from '@/core/dev/constants';
 import { eq } from 'drizzle-orm';
 
 export default function ProfileTab() {
   const [userProfile, setUserProfile] = useState<Profile | null>(null);
+  const [alertsModalVisible, setAlertsModalVisible] = useState(false);
 
   useFocusEffect(
     useCallback(() => {
@@ -95,6 +97,25 @@ export default function ProfileTab() {
           </Pressable>
         </View>
 
+        {/* Alertas y Umbrales (RF-010 / RF-011) */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>ALERTAS Y NOTIFICACIONES</Text>
+          <Pressable
+            onPress={() => setAlertsModalVisible(true)}
+            style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
+            accessibilityRole="button"
+            accessibilityLabel="Configurar alertas y umbrales de presupuesto"
+          >
+            <View style={styles.row}>
+              <View style={styles.rowLeft}>
+                <Icon name="Bell" size={18} color={colors.primary} />
+                <Text style={styles.rowLabel}>Configurar alertas y umbrales</Text>
+              </View>
+              <Icon name="ChevronRight" size={18} color={colors.ink3} />
+            </View>
+          </Pressable>
+        </View>
+
         {/* Seguridad y Datos */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>SEGURIDAD Y BASE LOCAL</Text>
@@ -131,6 +152,11 @@ export default function ProfileTab() {
           </Text>
         </View>
       </ScrollView>
+      {/* Modal de Configuración de Alertas y Umbrales (RF-010) */}
+      <NotificationSettingsModal
+        visible={alertsModalVisible}
+        onClose={() => setAlertsModalVisible(false)}
+      />
     </SafeAreaView>
   );
 }

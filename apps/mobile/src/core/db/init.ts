@@ -177,6 +177,41 @@ export function initDatabase(): void {
     );
 
     CREATE INDEX IF NOT EXISTS idx_voice_learning_user_phrase ON voice_learning (user_id, phrase);
+
+    -- Tabla: notification_prefs (RF-010: Preferencias de Alertas)
+    CREATE TABLE IF NOT EXISTS notification_prefs (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      enabled INTEGER DEFAULT 1 NOT NULL,
+      thresholds TEXT DEFAULT '[50,80,100]' NOT NULL,
+      channel_in_app INTEGER DEFAULT 1 NOT NULL,
+      channel_push INTEGER DEFAULT 0 NOT NULL,
+      created_at TEXT NOT NULL,
+      client_updated_at TEXT NOT NULL,
+      updated_at TEXT,
+      deleted_at TEXT
+    );
+
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_notification_prefs_user ON notification_prefs (user_id);
+
+    -- Tabla: budget_alerts_history (RF-011 / RNF-010: Historial Anti-Spam)
+    CREATE TABLE IF NOT EXISTS budget_alerts_history (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      budget_id TEXT NOT NULL,
+      category_id TEXT NOT NULL,
+      threshold_percent INTEGER NOT NULL,
+      period_start TEXT NOT NULL,
+      period_end TEXT NOT NULL,
+      spent_cents INTEGER NOT NULL,
+      budget_amount_cents INTEGER NOT NULL,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_budget_alerts_user_date ON budget_alerts_history (user_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_budget_alerts_budget ON budget_alerts_history (budget_id);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_budget_alerts_history_unique 
+      ON budget_alerts_history (user_id, budget_id, period_start, threshold_percent);
   `);
 
   // 2. Sembrado de Profile inicial (DEV_USER_ID)
@@ -241,5 +276,18 @@ export function initDatabase(): void {
     console.info(`[initDatabase] Semilla de categorías: ${inserted} categorías por defecto añadidas.`);
   }
 
-
+  // 4. Sembrado de Preferencias de Alertas (DEV_USER_ID)
+  const existingPrefs = sqliteDb.getFirstSync<any>(
+    'SELECT id FROM notification_prefs WHERE user_id = ?',
+    [DEV_USER_ID]
+  );
+  if (!existingPrefs) {
+    const prefsId = Crypto.randomUUID();
+    sqliteDb.runSync(
+      `INSERT INTO notification_prefs (
+        id, user_id, enabled, thresholds, channel_in_app, channel_push, created_at, client_updated_at
+      ) VALUES (?, ?, 1, ?, 1, 0, ?, ?)`,
+      [prefsId, DEV_USER_ID, '[50,80,100]', now, now]
+    );
+  }
 }
