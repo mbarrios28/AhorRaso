@@ -1,7 +1,7 @@
 import * as Crypto from 'expo-crypto';
 import { sqliteDb } from './client';
 
-export type OutboxEntity = 'transactions' | 'categories' | 'merchants' | 'profile';
+export type OutboxEntity = 'transactions' | 'categories' | 'merchants' | 'profile' | 'budgets';
 export type OutboxOp = 'upsert' | 'delete';
 
 export interface EnqueueOutboxParams {

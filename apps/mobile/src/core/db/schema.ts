@@ -16,7 +16,7 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-import { sqliteTable, text, integer, index } from 'drizzle-orm/sqlite-core';
+import { sqliteTable, text, integer, index, uniqueIndex } from 'drizzle-orm/sqlite-core';
 
 // ==========================================
 // 1. TABLA: profile (Usuario local logueado)
@@ -109,7 +109,37 @@ export const transactions = sqliteTable(
 );
 
 // ==========================================
-// 5. TABLA: outbox (Cola local para sincronización)
+// 5. TABLA: budgets (RF-006: Presupuestos por Categoría)
+// ==========================================
+export const budgets = sqliteTable(
+  'budgets',
+  {
+    id: text('id').primaryKey(), // UUID cliente
+    userId: text('user_id').notNull(),
+    categoryId: text('category_id').notNull(), // FK lógica a categories
+    amountCents: integer('amount_cents').notNull(), // Monto límite > 0 en céntimos
+    periodType: text('period_type').$type<'weekly' | 'biweekly' | 'monthly'>().notNull(),
+    periodStart: text('period_start').notNull(), // Formato "YYYY-MM-DD"
+    periodEnd: text('period_end').notNull(), // Formato "YYYY-MM-DD"
+    createdAt: text('created_at').notNull(),
+    clientUpdatedAt: text('client_updated_at').notNull(),
+    updatedAt: text('updated_at'),
+    deletedAt: text('deleted_at'),
+  },
+  (table) => [
+    index('idx_budgets_user_period').on(table.userId, table.periodStart),
+    index('idx_budgets_user_cat').on(table.userId, table.categoryId),
+    uniqueIndex('idx_budgets_unique_period').on(
+      table.userId,
+      table.categoryId,
+      table.periodStart,
+      table.periodType
+    ),
+  ]
+);
+
+// ==========================================
+// 6. TABLA: outbox (Cola local para sincronización)
 // ==========================================
 export const outbox = sqliteTable(
   'outbox',
@@ -130,7 +160,7 @@ export const outbox = sqliteTable(
 );
 
 // ==========================================
-// 6. TABLA: voice_learning (Autoaprendizaje adaptativo)
+// 7. TABLA: voice_learning (Autoaprendizaje adaptativo)
 // ==========================================
 export const voiceLearning = sqliteTable(
   'voice_learning',
@@ -161,6 +191,9 @@ export type InsertMerchant = typeof merchants.$inferInsert;
 
 export type Transaction = typeof transactions.$inferSelect;
 export type InsertTransaction = typeof transactions.$inferInsert;
+
+export type Budget = typeof budgets.$inferSelect;
+export type InsertBudget = typeof budgets.$inferInsert;
 
 export type OutboxItem = typeof outbox.$inferSelect;
 export type InsertOutboxItem = typeof outbox.$inferInsert;
