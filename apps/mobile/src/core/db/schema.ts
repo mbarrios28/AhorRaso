@@ -1,8 +1,8 @@
 /**
  * AhorRaso - Esquema Relacional de Base de Datos Local (SQLite + Drizzle ORM)
- * 
+ *
  * ─────────────────────────────────────────────────────────────────────────────
- * REGLAS TRANSVERSALES DE PERSISTENCIA (CRÍTICAS PARA EL MOTOR DE SYNC):
+ * REGLAS TRANSVERSALES DE PRESISTENCIA (CRÍTICAS PARA EL MOTOR DE SYNC):
  * 1. Identidad: UUIDv4 generado en el cliente (`id TEXT PRIMARY KEY`).
  * 2. Timestamps: ISO-8601 UTC en formato texto (ej: "2026-10-11T15:04:05.123Z").
  * 3. Fechas: Formato texto "YYYY-MM-DD".
@@ -32,6 +32,8 @@ export const profile = sqliteTable('profile', {
   createdAt: text('created_at').notNull(),
   clientUpdatedAt: text('client_updated_at').notNull(),
   updatedAt: text('updated_at'),
+  passwordHash: text('password_hash'), // nullable hashed password
+  pinHash: text('pin_hash'), // nullable hashed PIN
 });
 
 // ==========================================
