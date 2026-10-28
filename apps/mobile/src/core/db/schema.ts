@@ -200,3 +200,60 @@ export type InsertOutboxItem = typeof outbox.$inferInsert;
 
 export type VoiceLearning = typeof voiceLearning.$inferSelect;
 export type InsertVoiceLearning = typeof voiceLearning.$inferInsert;
+
+// ==========================================
+// 8. TABLA: notification_prefs (RF-010: Preferencias de Alertas)
+// ==========================================
+export const notificationPrefs = sqliteTable(
+  'notification_prefs',
+  {
+    id: text('id').primaryKey(), // UUID cliente
+    userId: text('user_id').notNull(),
+    enabled: integer('enabled').default(1).notNull(), // 0 = false, 1 = true
+    thresholds: text('thresholds').default('[50,80,100]').notNull(), // JSON serializado: [50, 80, 100]
+    channelInApp: integer('channel_in_app').default(1).notNull(),
+    channelPush: integer('channel_push').default(0).notNull(),
+    createdAt: text('created_at').notNull(),
+    clientUpdatedAt: text('client_updated_at').notNull(),
+    updatedAt: text('updated_at'),
+    deletedAt: text('deleted_at'),
+  },
+  (table) => [
+    uniqueIndex('idx_notification_prefs_user').on(table.userId),
+  ]
+);
+
+// ==========================================
+// 9. TABLA: budget_alerts_history (RF-011 / RNF-010: Historial Anti-Spam)
+// ==========================================
+export const budgetAlertsHistory = sqliteTable(
+  'budget_alerts_history',
+  {
+    id: text('id').primaryKey(), // UUID cliente
+    userId: text('user_id').notNull(),
+    budgetId: text('budget_id').notNull(),
+    categoryId: text('category_id').notNull(),
+    thresholdPercent: integer('threshold_percent').notNull(), // 50, 80, 100
+    periodStart: text('period_start').notNull(),
+    periodEnd: text('period_end').notNull(),
+    spentCents: integer('spent_cents').notNull(),
+    budgetAmountCents: integer('budget_amount_cents').notNull(),
+    createdAt: text('created_at').notNull(),
+  },
+  (table) => [
+    index('idx_budget_alerts_user_date').on(table.userId, table.createdAt),
+    index('idx_budget_alerts_budget').on(table.budgetId),
+    uniqueIndex('idx_budget_alerts_history_unique').on(
+      table.userId,
+      table.budgetId,
+      table.periodStart,
+      table.thresholdPercent
+    ),
+  ]
+);
+
+export type NotificationPrefs = typeof notificationPrefs.$inferSelect;
+export type InsertNotificationPrefs = typeof notificationPrefs.$inferInsert;
+
+export type BudgetAlertHistory = typeof budgetAlertsHistory.$inferSelect;
+export type InsertBudgetAlertHistory = typeof budgetAlertsHistory.$inferInsert;

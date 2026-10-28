@@ -43,6 +43,8 @@ export function resetDatabase({ seed = true }: { seed?: boolean } = {}): void {
   try {
     sqliteDb.execSync(`
       DELETE FROM outbox;
+      DELETE FROM budget_alerts_history;
+      DELETE FROM notification_prefs;
       DELETE FROM budgets;
       DELETE FROM transactions;
       DELETE FROM merchants;
@@ -74,7 +76,16 @@ export function getOutboxEntries(entity: string, op?: 'upsert' | 'delete'): Outb
 }
 
 /** Cuenta todas las filas de una tabla vía SQL crudo (independiente del ORM). */
-export function countRows(table: 'categories' | 'transactions' | 'merchants' | 'outbox' | 'budgets'): number {
+export function countRows(
+  table:
+    | 'categories'
+    | 'transactions'
+    | 'merchants'
+    | 'outbox'
+    | 'budgets'
+    | 'notification_prefs'
+    | 'budget_alerts_history'
+): number {
   const row = sqliteDb.getFirstSync<{ total: number }>(`SELECT count(*) AS total FROM ${table}`);
   return row?.total ?? 0;
 }
