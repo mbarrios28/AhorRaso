@@ -37,6 +37,7 @@ export const updateBudgetSchema = z.object({
     .number()
     .int('El monto debe ser un valor entero en céntimos')
     .positive('El monto debe ser mayor a 0'),
+  periodType: budgetPeriodSchema.optional(),
 });
 
 export type CreateBudgetInput = z.infer<typeof createBudgetSchema>;

@@ -19,6 +19,7 @@ import {
   toBudgetValidationError,
   BudgetPeriod,
   BudgetWithCategory,
+  calculatePeriodRange,
 } from '../domain/types';
 import { BudgetError, BUDGET_ERROR_MESSAGES } from '../domain/errors';
 
@@ -184,9 +185,10 @@ export const budgetsRepository = {
 
   /**
    * Lista todos los presupuestos activos del usuario enriquecidos con su
-   * categoría y el gasto acumulado en el periodo.
+   * categoría y el gasto acumulado en el periodo en curso (RF-006 / Filtrado Estricto).
+   * Al comenzar un nuevo periodo, el cálculo se ajusta automáticamente y el gasto inicia en 0.
    */
-  listActive(userId: string): BudgetWithCategory[] {
+  listActive(userId: string, refDate: Date | string = new Date()): BudgetWithCategory[] {
     const activeBudgets = db
       .select()
       .from(budgets)
@@ -206,7 +208,10 @@ export const budgetsRepository = {
     return activeBudgets.map((b) => {
       const cat = catMap.get(b.categoryId);
 
-      // Calcular el gasto acumulado en el periodo del presupuesto
+      // Calcular el rango del periodo en curso para el tipo de periodo (RF-006 / Filtrado Estricto)
+      const currentPeriod = calculatePeriodRange(b.periodType, refDate);
+
+      // Calcular el gasto acumulado estrictamente dentro del periodo activo
       const spentRow = sqliteDb.getFirstSync<{ total_spent: number }>(
         `SELECT coalesce(sum(amount_cents), 0) AS total_spent
          FROM transactions
@@ -216,11 +221,13 @@ export const budgetsRepository = {
            AND occurred_on >= ?
            AND occurred_on <= ?
            AND deleted_at IS NULL`,
-        [userId, b.categoryId, b.periodStart, b.periodEnd]
+        [userId, b.categoryId, currentPeriod.periodStart, currentPeriod.periodEnd]
       );
 
       return {
         ...b,
+        periodStart: currentPeriod.periodStart,
+        periodEnd: currentPeriod.periodEnd,
         categoryName: cat?.name ?? 'Categoría',
         categoryIcon: cat?.icon ?? 'Tag',
         categoryColor: cat?.color ?? '#64748B',
@@ -230,7 +237,7 @@ export const budgetsRepository = {
   },
 
   /**
-   * Actualiza el monto de un presupuesto existente.
+   * Actualiza el monto y/o periodo de un presupuesto existente.
    */
   update(userId: string, budgetId: string, input: UpdateBudgetInput): Budget {
     let validated: UpdateBudgetInput;
@@ -245,10 +252,43 @@ export const budgetsRepository = {
       throw new BudgetError('NOT_FOUND', BUDGET_ERROR_MESSAGES.NOT_FOUND);
     }
 
+    let periodType = existing.periodType;
+    let periodStart = existing.periodStart;
+    let periodEnd = existing.periodEnd;
+
+    if (validated.periodType && validated.periodType !== existing.periodType) {
+      periodType = validated.periodType;
+      const range = calculatePeriodRange(periodType);
+      periodStart = range.periodStart;
+      periodEnd = range.periodEnd;
+
+      // Verificar unicidad en el nuevo periodo
+      const duplicate = db
+        .select()
+        .from(budgets)
+        .where(
+          and(
+            eq(budgets.userId, userId),
+            eq(budgets.categoryId, existing.categoryId),
+            eq(budgets.periodStart, periodStart),
+            eq(budgets.periodType, periodType),
+            isNull(budgets.deletedAt)
+          )
+        )
+        .get();
+
+      if (duplicate && duplicate.id !== budgetId) {
+        throw new BudgetError('DUPLICATE_BUDGET', BUDGET_ERROR_MESSAGES.DUPLICATE_BUDGET);
+      }
+    }
+
     const now = new Date().toISOString();
     const updated: Budget = {
       ...existing,
       amountCents: validated.amountCents,
+      periodType,
+      periodStart,
+      periodEnd,
       clientUpdatedAt: now,
     };
 
@@ -256,6 +296,9 @@ export const budgetsRepository = {
       tx.update(budgets)
         .set({
           amountCents: validated.amountCents,
+          periodType,
+          periodStart,
+          periodEnd,
           clientUpdatedAt: now,
         })
         .where(and(eq(budgets.id, budgetId), eq(budgets.userId, userId)))
