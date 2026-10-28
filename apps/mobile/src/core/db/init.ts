@@ -125,6 +125,30 @@ export function initDatabase(): void {
     CREATE INDEX IF NOT EXISTS idx_tx_user_merchant ON transactions (user_id, merchant_id);
     CREATE INDEX IF NOT EXISTS idx_tx_user_updated ON transactions (user_id, updated_at);
 
+    -- Tabla: budgets (RF-006: Presupuestos por Categoría)
+    CREATE TABLE IF NOT EXISTS budgets (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      category_id TEXT NOT NULL,
+      amount_cents INTEGER NOT NULL CHECK (amount_cents > 0),
+      period_type TEXT NOT NULL CHECK (period_type IN ('weekly', 'biweekly', 'monthly')),
+      period_start TEXT NOT NULL,
+      period_end TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      client_updated_at TEXT NOT NULL,
+      updated_at TEXT,
+      deleted_at TEXT,
+      CHECK (period_end >= period_start)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_budgets_user_period ON budgets (user_id, period_start DESC);
+    CREATE INDEX IF NOT EXISTS idx_budgets_user_cat ON budgets (user_id, category_id);
+
+    -- Índice único parcial para evitar presupuestos duplicados en el mismo periodo (RNF-009)
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_budgets_unique_period 
+      ON budgets (user_id, category_id, period_start, period_type) 
+      WHERE deleted_at IS NULL;
+
     -- Tabla: outbox
     CREATE TABLE IF NOT EXISTS outbox (
       id TEXT PRIMARY KEY,

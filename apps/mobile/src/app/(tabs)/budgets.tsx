@@ -1,105 +1,215 @@
 import React, { useState, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from 'expo-router';
 import { colors, spacing, radius, typography } from '@/core/theme';
 import { Icon } from '@/core/ui';
-import { db, categories, Category } from '@/core/db';
 import { DEV_USER_ID } from '@/core/dev/constants';
-import { eq } from 'drizzle-orm';
+import { budgetsRepository } from '@/features/budgets/data/budgets.repository';
+import { BudgetWithCategory } from '@/features/budgets/domain/types';
+import { CreateBudgetModal } from '@/features/budgets/ui/CreateBudgetModal';
 
 export default function BudgetsTab() {
-  const [expenseCats, setExpenseCats] = useState<Category[]>([]);
+  const [activeBudgets, setActiveBudgets] = useState<BudgetWithCategory[]>([]);
+  const [modalVisible, setModalVisible] = useState(false);
+
+  const loadBudgets = useCallback(() => {
+    try {
+      const list = budgetsRepository.listActive(DEV_USER_ID);
+      setActiveBudgets(list);
+    } catch (e) {
+      console.error('Error al cargar presupuestos:', e);
+    }
+  }, []);
 
   useFocusEffect(
     useCallback(() => {
-      try {
-        const list = db
-          .select()
-          .from(categories)
-          .where(eq(categories.userId, DEV_USER_ID))
-          .all()
-          .filter((c) => c.type === 'expense');
-        setExpenseCats(list);
-      } catch (e) {
-        console.error('Error al cargar categorías en presupuestos:', e);
-      }
-    }, [])
+      loadBudgets();
+    }, [loadBudgets])
   );
+
+  // Totales agregados
+  const totalBudgetCents = activeBudgets.reduce((acc, b) => acc + b.amountCents, 0);
+  const totalSpentCents = activeBudgets.reduce((acc, b) => acc + b.spentCents, 0);
+  const availableCents = Math.max(0, totalBudgetCents - totalSpentCents);
+  const overallPct =
+    totalBudgetCents > 0
+      ? Math.min(100, Math.round((totalSpentCents / totalBudgetCents) * 100))
+      : 0;
+
+  const formatPeriodLabel = (type: string) => {
+    switch (type) {
+      case 'weekly':
+        return 'Semanal';
+      case 'biweekly':
+        return 'Quincenal';
+      case 'monthly':
+      default:
+        return 'Mensual';
+    }
+  };
 
   return (
     <SafeAreaView style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
         {/* Header */}
         <View style={styles.header}>
-          <Text style={styles.headerTitle}>Presupuestos</Text>
-          <View style={styles.periodBadge}>
-            <Text style={styles.periodText}>Octubre 2026</Text>
+          <View>
+            <Text style={styles.headerTitle}>Presupuestos</Text>
+            <Text style={styles.headerSubtitle}>Límites de gasto por categoría</Text>
           </View>
+          <Pressable
+            style={styles.addButton}
+            onPress={() => setModalVisible(true)}
+            accessibilityRole="button"
+            accessibilityLabel="Establecer presupuesto"
+          >
+            <Icon name="Plus" size={16} color="#0D0D0F" />
+            <Text style={styles.addButtonText}>Establecer</Text>
+          </Pressable>
         </View>
 
         {/* Card Resumen General */}
         <View style={styles.summaryCard}>
-          <Text style={styles.summaryLabel}>PRESUPUESTO MENSUAL</Text>
-          <Text style={styles.summaryAmount}>S/ 350.00</Text>
+          <Text style={styles.summaryLabel}>PRESUPUESTO TOTAL ACTIVO</Text>
+          <Text style={styles.summaryAmount}>
+            S/ {(totalBudgetCents / 100).toFixed(2)}
+          </Text>
           <View style={styles.progressBarBg}>
-            <View style={[styles.progressBarFill, { width: '45%' }]} />
+            <View
+              style={[
+                styles.progressBarFill,
+                {
+                  width: `${overallPct}%`,
+                  backgroundColor: overallPct >= 100 ? colors.danger : colors.primary,
+                },
+              ]}
+            />
           </View>
           <View style={styles.progressRow}>
-            <Text style={styles.progressText}>Gastado: S/ 157.50 (45%)</Text>
-            <Text style={[styles.progressText, { color: colors.secondary }]}>Disponible: S/ 192.50</Text>
+            <Text style={styles.progressText}>
+              Gastado: S/ {(totalSpentCents / 100).toFixed(2)} ({overallPct}%)
+            </Text>
+            <Text style={[styles.progressText, { color: colors.secondary }]}>
+              Disponible: S/ {(availableCents / 100).toFixed(2)}
+            </Text>
           </View>
         </View>
 
         {/* Categorías con Presupuesto */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>LÍMITES POR CATEGORÍA</Text>
-          <View style={styles.categoryList}>
-            {expenseCats.map((cat, index) => {
-              // Valores ilustrativos para mostrar la maqueta de Dev B
-              const limits = [120, 50, 60, 40, 50, 30];
-              const limit = limits[index % limits.length];
-              const pct = Math.min(100, (index + 2) * 15);
+          <View style={styles.sectionHeaderRow}>
+            <Text style={styles.sectionTitle}>LÍMITES POR CATEGORÍA</Text>
+            <Text style={styles.countBadge}>
+              {activeBudgets.length} configurado{activeBudgets.length === 1 ? '' : 's'}
+            </Text>
+          </View>
 
-              return (
-                <View key={cat.id} style={styles.categoryRow}>
-                  <View style={[styles.catIconBox, { borderColor: colors.line }]}>
-                    <Icon name={cat.icon} size={18} color={cat.color} />
-                  </View>
-                  <View style={styles.catInfo}>
-                    <View style={styles.catHeader}>
-                      <Text style={styles.catName}>{cat.name}</Text>
-                      <Text style={styles.catLimit}>Tope: S/ {limit}</Text>
-                    </View>
-                    <View style={styles.catBarBg}>
-                      <View
-                        style={[
-                          styles.catBarFill,
-                          {
-                            width: `${pct}%`,
-                            backgroundColor: pct > 80 ? colors.tertiary : cat.color,
-                          },
-                        ]}
+          {activeBudgets.length === 0 ? (
+            <View style={styles.emptyStateContainer}>
+              <View style={styles.emptyStateIcon}>
+                <Icon name="PieChart" size={28} color={colors.ink3} />
+              </View>
+              <Text style={styles.emptyStateTitle}>Sin presupuestos definidos</Text>
+              <Text style={styles.emptyStateSubtitle}>
+                Establece un tope de gasto por categoría para controlar tus finanzas y prevenir sobregiros.
+              </Text>
+              <Pressable
+                style={styles.emptyStateBtn}
+                onPress={() => setModalVisible(true)}
+              >
+                <Icon name="Plus" size={16} color="#0D0D0F" />
+                <Text style={styles.emptyStateBtnText}>Nuevo Presupuesto</Text>
+              </Pressable>
+            </View>
+          ) : (
+            <View style={styles.categoryList}>
+              {activeBudgets.map((budget) => {
+                const limitAmount = (budget.amountCents / 100).toFixed(2);
+                const spentAmount = (budget.spentCents / 100).toFixed(2);
+                const pct =
+                  budget.amountCents > 0
+                    ? Math.min(100, Math.round((budget.spentCents / budget.amountCents) * 100))
+                    : 0;
+
+                return (
+                  <View key={budget.id} style={styles.categoryRow}>
+                    <View
+                      style={[
+                        styles.catIconBox,
+                        { borderColor: colors.line, backgroundColor: colors.surface2 },
+                      ]}
+                    >
+                      <Icon
+                        name={budget.categoryIcon}
+                        size={18}
+                        color={budget.categoryColor}
                       />
                     </View>
+                    <View style={styles.catInfo}>
+                      <View style={styles.catHeader}>
+                        <View style={styles.catTitleRow}>
+                          <Text style={styles.catName}>{budget.categoryName}</Text>
+                          <View style={styles.periodBadge}>
+                            <Text style={styles.periodBadgeText}>
+                              {formatPeriodLabel(budget.periodType)}
+                            </Text>
+                          </View>
+                        </View>
+                        <Text style={styles.catLimit}>Tope: S/ {limitAmount}</Text>
+                      </View>
+                      <View style={styles.catBarBg}>
+                        <View
+                          style={[
+                            styles.catBarFill,
+                            {
+                              width: `${pct}%`,
+                              backgroundColor:
+                                pct >= 100
+                                  ? colors.danger
+                                  : pct >= 80
+                                  ? colors.tertiary
+                                  : budget.categoryColor,
+                            },
+                          ]}
+                        />
+                      </View>
+                      <View style={styles.catFooter}>
+                        <Text style={styles.catSpentText}>
+                          Gastado: S/ {spentAmount} ({pct}%)
+                        </Text>
+                        <Text style={styles.catPeriodDates}>
+                          {budget.periodStart} - {budget.periodEnd}
+                        </Text>
+                      </View>
+                    </View>
                   </View>
-                </View>
-              );
-            })}
-          </View>
+                );
+              })}
+            </View>
+          )}
         </View>
 
         {/* Info Box */}
         <View style={styles.infoBox}>
           <View style={styles.infoBadge}>
-            <Text style={styles.infoBadgeText}>RF-006 & RF-010 · PRESUPUESTOS Y ALERTAS</Text>
+            <Text style={styles.infoBadgeText}>RF-006 & RNF-009 · PRESUPUESTOS Y CONFIABILIDAD</Text>
           </View>
           <Text style={styles.infoText}>
-            Asignado a Dev B para cálculo de sobregiro por periodos, disparadores pg_cron
-            y notificaciones push automáticas al alcanzar el 80% y 100%.
+            Presupuestos almacenados en SQLite local con control estricto de unicidad por categoría y periodo,
+            sincronizados automáticamente vía la cola Outbox.
           </Text>
         </View>
       </ScrollView>
+
+      {/* Modal para Crear Presupuesto */}
+      <CreateBudgetModal
+        visible={modalVisible}
+        onClose={() => setModalVisible(false)}
+        onSaved={() => {
+          loadBudgets();
+        }}
+      />
     </SafeAreaView>
   );
 }
@@ -125,18 +235,24 @@ const styles = StyleSheet.create({
   headerTitle: {
     ...typography.titleLarge,
   },
-  periodBadge: {
-    backgroundColor: colors.surface2,
-    borderColor: colors.line,
-    borderWidth: 1,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 2,
-    borderRadius: radius.full,
+  headerSubtitle: {
+    ...typography.bodySmall,
+    color: colors.ink3,
+    marginTop: 2,
   },
-  periodText: {
-    ...typography.monoSmall,
-    fontSize: 11,
-    color: colors.ink2,
+  addButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: colors.primary,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 6,
+    borderRadius: radius.md,
+  },
+  addButtonText: {
+    ...typography.labelSmall,
+    color: '#0D0D0F',
+    fontWeight: '700',
   },
   summaryCard: {
     backgroundColor: colors.surface,
@@ -166,7 +282,6 @@ const styles = StyleSheet.create({
   },
   progressBarFill: {
     height: '100%',
-    backgroundColor: colors.primary,
     borderRadius: radius.full,
   },
   progressRow: {
@@ -182,10 +297,20 @@ const styles = StyleSheet.create({
   section: {
     gap: spacing.xs,
   },
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing.xxs,
+  },
   sectionTitle: {
     ...typography.labelSmall,
     color: colors.ink3,
-    marginBottom: spacing.xxs,
+  },
+  countBadge: {
+    ...typography.monoSmall,
+    fontSize: 11,
+    color: colors.ink3,
   },
   categoryList: {
     backgroundColor: colors.surface,
@@ -204,10 +329,9 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.line,
   },
   catIconBox: {
-    width: 36,
-    height: 36,
+    width: 38,
+    height: 38,
     borderRadius: radius.sm,
-    backgroundColor: colors.surface2,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
@@ -219,16 +343,36 @@ const styles = StyleSheet.create({
   catHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  catTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
   },
   catName: {
     ...typography.bodyMedium,
     color: colors.ink,
     fontWeight: '600',
   },
+  periodBadge: {
+    backgroundColor: colors.surface2,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.line,
+  },
+  periodBadgeText: {
+    ...typography.monoSmall,
+    fontSize: 10,
+    color: colors.ink2,
+  },
   catLimit: {
     ...typography.monoSmall,
-    color: colors.ink3,
-    fontSize: 11,
+    color: colors.ink,
+    fontSize: 12,
+    fontWeight: '600',
   },
   catBarBg: {
     height: 6,
@@ -239,6 +383,65 @@ const styles = StyleSheet.create({
   catBarFill: {
     height: '100%',
     borderRadius: radius.full,
+  },
+  catFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  catSpentText: {
+    ...typography.bodySmall,
+    fontSize: 11,
+    color: colors.ink3,
+  },
+  catPeriodDates: {
+    ...typography.monoSmall,
+    fontSize: 10,
+    color: colors.ink3,
+  },
+  emptyStateContainer: {
+    backgroundColor: colors.surface,
+    borderColor: colors.line,
+    borderWidth: 1,
+    borderRadius: radius.md,
+    padding: spacing.xl,
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  emptyStateIcon: {
+    width: 52,
+    height: 52,
+    borderRadius: radius.full,
+    backgroundColor: colors.surface2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.xs,
+  },
+  emptyStateTitle: {
+    ...typography.titleSmall,
+    color: colors.ink,
+  },
+  emptyStateSubtitle: {
+    ...typography.bodySmall,
+    color: colors.ink3,
+    textAlign: 'center',
+    paddingHorizontal: spacing.sm,
+    lineHeight: 18,
+  },
+  emptyStateBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: colors.primary,
+    paddingHorizontal: spacing.base,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.md,
+    marginTop: spacing.sm,
+  },
+  emptyStateBtnText: {
+    ...typography.labelSmall,
+    color: '#0D0D0F',
+    fontWeight: '700',
   },
   infoBox: {
     backgroundColor: colors.surface,
@@ -254,16 +457,18 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface2,
     paddingHorizontal: spacing.sm,
     paddingVertical: 2,
-    borderRadius: radius.xs,
+    borderRadius: radius.full,
+    borderColor: colors.line,
+    borderWidth: 1,
   },
   infoBadgeText: {
     ...typography.monoSmall,
     fontSize: 10,
-    color: colors.primary,
+    color: colors.ink2,
   },
   infoText: {
     ...typography.bodySmall,
-    color: colors.ink2,
+    color: colors.ink3,
     lineHeight: 18,
   },
 });
