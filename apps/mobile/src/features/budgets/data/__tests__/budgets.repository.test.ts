@@ -269,6 +269,72 @@ describe('budgetsRepository.listActive y cálculo de gasto', () => {
     expect(budgetItem.categoryColor).toBe(cat.color);
     expect(budgetItem.spentCents).toBe(7500); // Exactamente los 75 soles
   });
+
+  it('recalcula automáticamente el periodo activo y reinicia el gasto acumulado a S/ 0 en un nuevo periodo (RF-006 / Filtrado Estricto)', () => {
+    const cat = getExpenseCategory();
+
+    // Presupuesto semanal creado en una semana anterior (19 al 25 de octubre 2026)
+    budgetsRepository.create(DEV_USER_ID, {
+      categoryId: cat.id,
+      amountCents: 15000, // S/ 150.00
+      periodType: 'weekly',
+      periodStart: '2026-10-19',
+      periodEnd: '2026-10-25',
+    });
+
+    const now = new Date().toISOString();
+    // Transacción realizada en la semana previa
+    db.insert(transactions)
+      .values({
+        id: 'tx-prev-week',
+        userId: DEV_USER_ID,
+        type: 'expense',
+        amountCents: 6000, // S/ 60.00
+        occurredOn: '2026-10-20',
+        categoryId: cat.id,
+        merchantId: null,
+        paymentMethod: 'cash',
+        source: null,
+        note: 'Gasto semana anterior',
+        entryMethod: 'manual',
+        createdAt: now,
+        clientUpdatedAt: now,
+        updatedAt: null,
+        deletedAt: null,
+      })
+      .run();
+
+    // 1. Al evaluar en la nueva semana (26 oct - 01 nov 2026), el gasto acumulado reinicia a 0
+    const listNewWeek = budgetsRepository.listActive(DEV_USER_ID, '2026-10-28');
+    expect(listNewWeek).toHaveLength(1);
+    expect(listNewWeek[0].periodStart).toBe('2026-10-26');
+    expect(listNewWeek[0].periodEnd).toBe('2026-11-01');
+    expect(listNewWeek[0].spentCents).toBe(0); // Reinicio automático a S/ 0
+
+    // 2. Insertar un gasto en la semana en curso
+    db.insert(transactions)
+      .values({
+        id: 'tx-current-week',
+        userId: DEV_USER_ID,
+        type: 'expense',
+        amountCents: 4500, // S/ 45.00
+        occurredOn: '2026-10-28',
+        categoryId: cat.id,
+        merchantId: null,
+        paymentMethod: 'cash',
+        source: null,
+        note: 'Gasto semana en curso',
+        entryMethod: 'manual',
+        createdAt: now,
+        clientUpdatedAt: now,
+        updatedAt: null,
+        deletedAt: null,
+      })
+      .run();
+
+    const listUpdated = budgetsRepository.listActive(DEV_USER_ID, '2026-10-28');
+    expect(listUpdated[0].spentCents).toBe(4500); // Solo incluye transacciones de la semana activa
+  });
 });
 
 describe('budgetsRepository.update y delete', () => {
@@ -290,6 +356,28 @@ describe('budgetsRepository.update y delete', () => {
 
     const fetched = budgetsRepository.getById(DEV_USER_ID, created.id);
     expect(fetched?.amountCents).toBe(18000);
+  });
+
+  it('actualiza el periodo de un presupuesto existente recalculando fechas de vigencia', () => {
+    const cat = getExpenseCategory();
+    const created = budgetsRepository.create(DEV_USER_ID, {
+      categoryId: cat.id,
+      amountCents: 10000,
+      periodType: 'weekly',
+      periodStart: '2026-10-26',
+      periodEnd: '2026-11-01',
+    });
+
+    const updated = budgetsRepository.update(DEV_USER_ID, created.id, {
+      amountCents: 12000,
+      periodType: 'monthly',
+    });
+
+    expect(updated.amountCents).toBe(12000);
+    expect(updated.periodType).toBe('monthly');
+
+    const fetched = budgetsRepository.getById(DEV_USER_ID, created.id);
+    expect(fetched?.periodType).toBe('monthly');
   });
 
   it('elimina un presupuesto vía soft-delete y encola outbox con op delete', () => {
