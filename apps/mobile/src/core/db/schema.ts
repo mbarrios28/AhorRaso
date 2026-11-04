@@ -259,3 +259,32 @@ export type InsertNotificationPrefs = typeof notificationPrefs.$inferInsert;
 
 export type BudgetAlertHistory = typeof budgetAlertsHistory.$inferSelect;
 export type InsertBudgetAlertHistory = typeof budgetAlertsHistory.$inferInsert;
+
+
+// ==========================================
+// 10. TABLA: savings_goals (RF-007 / RF-014: Metas de Ahorro y Proyección)
+// ==========================================
+export const savingsGoals = sqliteTable(
+  'savings_goals',
+  {
+    id: text('id').primaryKey(), // UUID cliente
+    userId: text('user_id').notNull(),
+    name: text('name').notNull(),
+    targetAmountCents: integer('target_amount_cents').notNull(),
+    currentAmountCents: integer('current_amount_cents').default(0).notNull(),
+    periodicSavingsCents: integer('periodic_savings_cents').notNull(),
+    frequency: text('frequency').$type<'weekly' | 'biweekly' | 'monthly'>().notNull(),
+    targetDate: text('target_date').notNull(), // ISO o YYYY-MM-DD
+    status: text('status').$type<'active' | 'completed' | 'cancelled'>().default('active').notNull(),
+    createdAt: text('created_at').notNull(),
+    updatedAt: text('updated_at'),
+    deletedAt: text('deleted_at'),
+  },
+  (table) => [
+    index('idx_savings_goals_user_status').on(table.userId, table.status),
+    index('idx_savings_goals_user_date').on(table.userId, table.createdAt),
+  ]
+);
+
+export type SavingsGoal = typeof savingsGoals.$inferSelect;
+export type InsertSavingsGoal = typeof savingsGoals.$inferInsert;
