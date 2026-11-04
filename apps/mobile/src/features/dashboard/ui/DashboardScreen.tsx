@@ -10,6 +10,7 @@ import { eq } from 'drizzle-orm';
 import { DashboardSummary } from '../domain/types';
 import { dashboardRepository } from '../data/dashboard.repository';
 import { savingsRepository, SavingsGoalWithSimulation } from '@/features/savings';
+import { alertsRepository, AlertBanner, BudgetAlertTriggered } from '@/features/alerts';
 
 /**
  * Pantalla principal del Dashboard Financiero (RF-008 / HU-04).
@@ -19,6 +20,7 @@ export function DashboardScreen() {
   const [userProfile, setUserProfile] = useState<Profile | null>(null);
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [primaryGoal, setPrimaryGoal] = useState<SavingsGoalWithSimulation | null>(null);
+  const [budgetAlerts, setBudgetAlerts] = useState<BudgetAlertTriggered[]>([]);
 
   // useFocusEffect se ejecuta cada vez que el usuario vuelve a la pantalla
   // Garantiza RNF-003: carga síncrona inmediata desde SQLite local en < 50 ms.
@@ -36,6 +38,11 @@ export function DashboardScreen() {
         // 3. Obtener meta activa principal real (HU-08 / RF-007 / RF-014)
         const activeSavings = savingsRepository.listActive(DEV_USER_ID);
         setPrimaryGoal(activeSavings[0] || null);
+
+        // 4. Evaluar y sincronizar alertas activas de presupuestos (DSV-01 / RF-011)
+        alertsRepository.evaluateBudgetAlerts(DEV_USER_ID);
+        const activeAlerts = alertsRepository.getActiveAlerts(DEV_USER_ID);
+        setBudgetAlerts(activeAlerts);
       } catch (e) {
         console.error('Error al actualizar datos del dashboard:', e);
       }
@@ -76,68 +83,82 @@ export function DashboardScreen() {
           </View>
         </View>
 
-        {/* 3. Acciones Rápidas (CTAs del equipo: Nuevo Gasto y Nuevo Ingreso) */}
-        <View style={styles.ctaRow}>
-          <Pressable
-            onPress={() => router.push('/new-expense')}
-            style={({ pressed }) => [
-              styles.ctaCardHalf,
-              pressed && { opacity: 0.9, transform: [{ scale: 0.99 }] },
-            ]}
-            accessibilityRole="button"
-            accessibilityLabel="Registrar nuevo gasto"
-          >
-            <View style={styles.ctaIconExpense}>
-              <Icon name="ArrowDownRight" size={18} color="#0D0D0F" strokeWidth={2.4} />
-            </View>
-            <View style={styles.ctaHalfContent}>
-              <Text style={styles.ctaHalfTitle}>Nuevo gasto</Text>
-              <Text style={styles.ctaHalfSubtitle}>Punto de venta (RF-002)</Text>
-            </View>
-          </Pressable>
+        {/* Banner de Alertas Críticas de Presupuesto (DSV-01 / RF-011) */}
+        {budgetAlerts.length > 0 && (
+          <AlertBanner
+            alerts={budgetAlerts}
+            onDismiss={(alertId) =>
+              setBudgetAlerts((prev) => prev.filter((a) => a.id !== alertId))
+            }
+          />
+        )}
 
-          <Pressable
-            onPress={() => router.push('/new-income')}
-            style={({ pressed }) => [
-              styles.ctaCardHalf,
-              styles.ctaCardIncome,
-              pressed && { opacity: 0.9, transform: [{ scale: 0.99 }] },
-            ]}
-            accessibilityRole="button"
-            accessibilityLabel="Registrar nuevo ingreso"
-          >
-            <View style={styles.ctaIconIncome}>
-              <Icon name="ArrowUpRight" size={18} color="#0D0D0F" strokeWidth={2.4} />
-            </View>
-            <View style={styles.ctaHalfContent}>
-              <Text style={styles.ctaHalfTitle}>Nuevo ingreso</Text>
-              <Text style={styles.ctaHalfSubtitle}>Registrar entrada (RF-001)</Text>
-            </View>
-          </Pressable>
-        </View>
+        {/* 3. Cuadrícula Simétrica de Acciones y Resumen Mensual (DSV-02 / DSV-03 / RF-008) */}
+        <View style={styles.symmetricGrid}>
+          {/* Columna Izquierda: Ingresos */}
+          <View style={styles.gridColumn}>
+            <Pressable
+              onPress={() => router.push('/new-income')}
+              style={({ pressed }) => [
+                styles.ctaCardHalf,
+                styles.ctaCardIncome,
+                pressed && { opacity: 0.9, transform: [{ scale: 0.99 }] },
+              ]}
+              accessibilityRole="button"
+              accessibilityLabel="Registrar nuevo ingreso"
+            >
+              <View style={styles.ctaIconIncome}>
+                <Icon name="ArrowUpRight" size={18} color="#0D0D0F" strokeWidth={2.4} />
+              </View>
+              <View style={styles.ctaHalfContent}>
+                <Text style={styles.ctaHalfTitle}>Nuevo ingreso</Text>
+                <Text style={styles.ctaHalfSubtitle}>Registrar entrada (RF-001)</Text>
+              </View>
+            </Pressable>
 
-        {/* 4. Resumen Mensual: Ingresos vs Gastos del Mes (RF-008 / HU-04) */}
-        <View style={styles.summaryGrid}>
-          {/* Card Ingresos del Mes */}
-          <View style={styles.summaryMetricCard}>
-            <View style={styles.metricHeader}>
-              <Text style={styles.metricLabel}>INGRESOS ({monthLabel})</Text>
-              <Icon name="ArrowUpRight" size={14} color={colors.secondary} />
+            {/* Card Ingresos del Mes */}
+            <View style={[styles.summaryMetricCard, styles.metricCardIncome]}>
+              <View style={styles.metricHeader}>
+                <Text style={styles.metricLabel}>INGRESOS ({monthLabel})</Text>
+                <Icon name="ArrowUpRight" size={14} color={colors.secondary} />
+              </View>
+              <Text style={[styles.metricAmount, { color: colors.secondary }]}>
+                +{summary?.formattedMonthlyIncome || 'S/ 0.00'}
+              </Text>
             </View>
-            <Text style={[styles.metricAmount, { color: colors.ink }]}>
-              {summary?.formattedMonthlyIncome || 'S/ 0.00'}
-            </Text>
           </View>
 
-          {/* Card Gastos del Mes */}
-          <View style={styles.summaryMetricCard}>
-            <View style={styles.metricHeader}>
-              <Text style={styles.metricLabel}>GASTOS ({monthLabel})</Text>
-              <Icon name="ArrowDownRight" size={14} color={colors.tertiary} />
+          {/* Columna Derecha: Gastos */}
+          <View style={styles.gridColumn}>
+            <Pressable
+              onPress={() => router.push('/new-expense')}
+              style={({ pressed }) => [
+                styles.ctaCardHalf,
+                styles.ctaCardExpense,
+                pressed && { opacity: 0.9, transform: [{ scale: 0.99 }] },
+              ]}
+              accessibilityRole="button"
+              accessibilityLabel="Registrar nuevo gasto"
+            >
+              <View style={styles.ctaIconExpense}>
+                <Icon name="ArrowDownRight" size={18} color="#0D0D0F" strokeWidth={2.4} />
+              </View>
+              <View style={styles.ctaHalfContent}>
+                <Text style={styles.ctaHalfTitle}>Nuevo gasto</Text>
+                <Text style={styles.ctaHalfSubtitle}>Punto de venta (RF-002)</Text>
+              </View>
+            </Pressable>
+
+            {/* Card Gastos del Mes */}
+            <View style={[styles.summaryMetricCard, styles.metricCardExpense]}>
+              <View style={styles.metricHeader}>
+                <Text style={styles.metricLabel}>GASTOS ({monthLabel})</Text>
+                <Icon name="ArrowDownRight" size={14} color={colors.tertiary} />
+              </View>
+              <Text style={[styles.metricAmount, { color: colors.tertiary }]}>
+                -{summary?.formattedMonthlyExpense || 'S/ 0.00'}
+              </Text>
             </View>
-            <Text style={[styles.metricAmount, { color: colors.ink }]}>
-              {summary?.formattedMonthlyExpense || 'S/ 0.00'}
-            </Text>
           </View>
         </View>
 
@@ -426,8 +447,12 @@ const styles = StyleSheet.create({
     ...typography.bodySmall,
     color: colors.ink3,
   },
-  ctaRow: {
+  symmetricGrid: {
     flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  gridColumn: {
+    flex: 1,
     gap: spacing.sm,
   },
   ctaCardHalf: {
@@ -443,12 +468,17 @@ const styles = StyleSheet.create({
   },
   ctaCardIncome: {
     backgroundColor: colors.surface,
+    borderColor: 'rgba(16, 185, 129, 0.3)',
+  },
+  ctaCardExpense: {
+    backgroundColor: colors.surface2,
+    borderColor: 'rgba(223, 108, 107, 0.3)',
   },
   ctaIconExpense: {
     width: 32,
     height: 32,
     borderRadius: radius.xs,
-    backgroundColor: colors.primary,
+    backgroundColor: colors.tertiary,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -479,12 +509,19 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   summaryMetricCard: {
-    flex: 1,
     backgroundColor: colors.surface,
     borderColor: colors.line,
     borderWidth: 1,
     borderRadius: radius.md,
     padding: spacing.md,
+  },
+  metricCardIncome: {
+    borderLeftWidth: 3,
+    borderLeftColor: colors.secondary,
+  },
+  metricCardExpense: {
+    borderLeftWidth: 3,
+    borderLeftColor: colors.tertiary,
   },
   metricHeader: {
     flexDirection: 'row',

@@ -244,3 +244,48 @@ describe('alertsRepository.evaluateBudgetAlerts (RF-011 & RNF-010)', () => {
     expect(evalResult.alerts).toHaveLength(0);
   });
 });
+
+
+describe('alertsRepository.getActiveAlerts (DSV-01 / RF-011)', () => {
+  it('retorna las alertas activas para presupuestos vigentes incluso si ya fueron evaluadas previamente (Anti-Spam)', () => {
+    const cat = getExpenseCategory();
+    budgetsRepository.create(DEV_USER_ID, {
+      categoryId: cat.id,
+      amountCents: 5000,
+      periodType: 'monthly',
+      periodStart: '2026-10-01',
+      periodEnd: '2026-10-31',
+    });
+
+    const now = new Date().toISOString();
+    db.insert(transactions)
+      .values({
+        id: 'tx-active-alert-1',
+        userId: DEV_USER_ID,
+        type: 'expense',
+        amountCents: 4000,
+        occurredOn: '2026-10-15',
+        categoryId: cat.id,
+        merchantId: null,
+        paymentMethod: 'digital',
+        source: null,
+        note: 'Prueba alerta activa',
+        entryMethod: 'manual',
+        createdAt: now,
+        clientUpdatedAt: now,
+        updatedAt: null,
+        deletedAt: null,
+      })
+      .run();
+
+    const eval1 = alertsRepository.evaluateBudgetAlerts(DEV_USER_ID);
+    expect(eval1.triggered).toBe(true);
+
+    const eval2 = alertsRepository.evaluateBudgetAlerts(DEV_USER_ID);
+    expect(eval2.alerts).toHaveLength(0);
+
+    const activeAlerts = alertsRepository.getActiveAlerts(DEV_USER_ID);
+    expect(activeAlerts.length).toBeGreaterThanOrEqual(1);
+    expect(activeAlerts.some((a) => a.thresholdPercent === 80)).toBe(true);
+  });
+});

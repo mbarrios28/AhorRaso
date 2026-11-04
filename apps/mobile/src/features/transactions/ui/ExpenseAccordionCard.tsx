@@ -53,7 +53,8 @@ export const ExpenseAccordionCard: React.FC<ExpenseAccordionCardProps> = ({
   };
 
   const categoryName = card.selectedCategory?.name || 'Sin categoría';
-  const categoryIcon = card.selectedCategory?.icon || 'Tag';
+  const categoryIcon = card.selectedCategory?.icon ?? 'Tag';
+  const categoryColor = card.selectedCategory?.color;
   const cardTitle = card.place.trim() || (card.selectedCategory?.name ?? `Gasto ${index + 1}`);
   const paymentLabel = card.paymentMethod === 'digital' ? 'Digital' : 'Efectivo';
   const subtitle = card.note.trim()
@@ -71,7 +72,7 @@ export const ExpenseAccordionCard: React.FC<ExpenseAccordionCardProps> = ({
       >
         <View style={styles.headerLeft}>
           <View style={styles.iconBox}>
-            <Icon name={categoryIcon} size={20} color={colors.primary} />
+            <Icon name={categoryIcon} size={20} color={categoryColor || colors.tertiary} />
           </View>
           <View style={styles.headerInfo}>
             <View style={styles.titleRow}>
@@ -91,9 +92,7 @@ export const ExpenseAccordionCard: React.FC<ExpenseAccordionCardProps> = ({
         </View>
 
         <View style={styles.headerRight}>
-          <Text style={styles.amountDisplay}>
-            S/ {parsedAmount.toFixed(2)}
-          </Text>
+          <Text style={[styles.amountDisplay, { color: colors.tertiary }]}>-S/ {parsedAmount.toFixed(2)}</Text>
           {canDelete && (
             <Pressable
               onPress={(e) => {
@@ -337,12 +336,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 6,
     paddingVertical: 1,
     borderRadius: 4,
-    backgroundColor: 'rgba(16, 185, 129, 0.15)',
+    backgroundColor: 'rgba(223, 108, 107, 0.15)',
   },
   categoryBadgeText: {
     fontFamily: fontFamilies.monoMedium,
     fontSize: 10,
-    color: colors.primary,
+    color: colors.tertiary,
   },
   subtitle: {
     ...typography.bodySmall,
