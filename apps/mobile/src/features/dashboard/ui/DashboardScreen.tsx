@@ -9,6 +9,7 @@ import { DEV_USER_ID } from '@/core/dev/constants';
 import { eq } from 'drizzle-orm';
 import { DashboardSummary } from '../domain/types';
 import { dashboardRepository } from '../data/dashboard.repository';
+import { savingsRepository, SavingsGoalWithSimulation } from '@/features/savings';
 
 /**
  * Pantalla principal del Dashboard Financiero (RF-008 / HU-04).
@@ -17,6 +18,7 @@ import { dashboardRepository } from '../data/dashboard.repository';
 export function DashboardScreen() {
   const [userProfile, setUserProfile] = useState<Profile | null>(null);
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
+  const [primaryGoal, setPrimaryGoal] = useState<SavingsGoalWithSimulation | null>(null);
 
   // useFocusEffect se ejecuta cada vez que el usuario vuelve a la pantalla
   // Garantiza RNF-003: carga síncrona inmediata desde SQLite local en < 50 ms.
@@ -30,6 +32,10 @@ export function DashboardScreen() {
         // 2. Obtener resumen financiero completo (RF-008 / HU-04)
         const dashData = dashboardRepository.getDashboardSummary(DEV_USER_ID);
         setSummary(dashData);
+
+        // 3. Obtener meta activa principal real (HU-08 / RF-007 / RF-014)
+        const activeSavings = savingsRepository.listActive(DEV_USER_ID);
+        setPrimaryGoal(activeSavings[0] || null);
       } catch (e) {
         console.error('Error al actualizar datos del dashboard:', e);
       }
@@ -227,39 +233,99 @@ export function DashboardScreen() {
         <View style={styles.section}>
           <View style={styles.sectionHeaderRow}>
             <Text style={styles.sectionTitle}>METAS DE AHORRO</Text>
-            <Text style={styles.sectionActionText}>GESTIONAR</Text>
+            <Pressable
+              onPress={() => router.push('/savings')}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel="Gestionar metas de ahorro"
+            >
+              <Text style={styles.sectionActionText}>GESTIONAR</Text>
+            </Pressable>
           </View>
 
-          <View style={styles.goalCard}>
-            <View style={styles.goalHeaderRow}>
-              <View style={styles.goalInfoLeft}>
-                <View style={styles.goalIconCircle}>
-                  <Icon name="Laptop" size={18} color={colors.secondary} />
+          {primaryGoal ? (
+            <Pressable
+              onPress={() => router.push('/savings')}
+              style={({ pressed }) => [
+                styles.goalCard,
+                pressed && { opacity: 0.9, transform: [{ scale: 0.99 }] },
+              ]}
+              accessibilityRole="button"
+              accessibilityLabel={`Meta de ahorro: ${primaryGoal.name}`}
+            >
+              <View style={styles.goalHeaderRow}>
+                <View style={styles.goalInfoLeft}>
+                  <View style={styles.goalIconCircle}>
+                    <Icon
+                      name={primaryGoal.status === 'completed' ? 'CheckCircle2' : 'Target'}
+                      size={18}
+                      color={
+                        primaryGoal.status === 'completed' ? colors.secondary : colors.primary
+                      }
+                    />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.goalTitle} numberOfLines={1}>
+                      {primaryGoal.name}
+                    </Text>
+                    <Text style={styles.goalDeadline} numberOfLines={1}>
+                      {primaryGoal.status === 'completed'
+                        ? '¡Meta completada!'
+                        : `Meta estimada: ${primaryGoal.simulation.estimatedDate}`}
+                    </Text>
+                  </View>
                 </View>
-                <View>
-                  <Text style={styles.goalTitle}>{summary?.activeGoal.title || 'Laptop para ciclo'}</Text>
-                  <Text style={styles.goalDeadline}>{summary?.activeGoal.deadlineText || 'Meta para marzo 2027'}</Text>
+                <View style={styles.goalAmountsRight}>
+                  <Text style={styles.goalAmountText}>
+                    S/ {(primaryGoal.currentAmountCents / 100).toFixed(2)}{' '}
+                    <Text style={styles.goalTargetText}>
+                      / S/ {(primaryGoal.targetAmountCents / 100).toFixed(2)}
+                    </Text>
+                  </Text>
+                  <Text style={styles.goalPercentageBadge}>
+                    {primaryGoal.simulation.progressPercentage}%
+                  </Text>
                 </View>
               </View>
-              <View style={styles.goalAmountsRight}>
-                <Text style={styles.goalAmountText}>
-                  {summary?.activeGoal.formattedCurrent || 'S/ 120.00'}{' '}
-                  <Text style={styles.goalTargetText}>/ {summary?.activeGoal.formattedTarget || 'S/ 500.00'}</Text>
+
+              {/* Barra de progreso de la meta */}
+              <View style={styles.goalProgressTrack}>
+                <View
+                  style={[
+                    styles.goalProgressFill,
+                    {
+                      width: `${Math.min(
+                        100,
+                        Math.max(0, primaryGoal.simulation.progressPercentage)
+                      )}%`,
+                      backgroundColor:
+                        primaryGoal.status === 'completed' ? colors.secondary : colors.primary,
+                    },
+                  ]}
+                />
+              </View>
+            </Pressable>
+          ) : (
+            <View style={styles.emptyGoalCard}>
+              <View style={styles.emptyGoalIconBox}>
+                <Icon name="Target" size={18} color={colors.ink3} />
+              </View>
+              <View style={styles.emptyGoalContent}>
+                <Text style={styles.emptyGoalTitle}>Sin metas activas</Text>
+                <Text style={styles.emptyGoalSubtitle}>
+                  Define un objetivo y simula tu tiempo de ahorro.
                 </Text>
-                <Text style={styles.goalPercentageBadge}>{summary?.activeGoal.percentage || 24}%</Text>
               </View>
+              <Pressable
+                onPress={() => router.push('/savings')}
+                style={styles.emptyGoalButton}
+                accessibilityRole="button"
+                accessibilityLabel="Crear meta de ahorro"
+              >
+                <Text style={styles.emptyGoalButtonText}>Crear</Text>
+              </Pressable>
             </View>
-
-            {/* Barra de progreso de la meta */}
-            <View style={styles.goalProgressTrack}>
-              <View
-                style={[
-                  styles.goalProgressFill,
-                  { width: `${summary?.activeGoal.percentage || 24}%` },
-                ]}
-              />
-            </View>
-          </View>
+          )}
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -680,5 +746,49 @@ const styles = StyleSheet.create({
     height: '100%',
     backgroundColor: colors.secondary,
     borderRadius: radius.full,
+  },
+  emptyGoalCard: {
+    backgroundColor: colors.surface,
+    borderColor: colors.line,
+    borderWidth: 1,
+    borderRadius: radius.md,
+    padding: spacing.base,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+  },
+  emptyGoalIconBox: {
+    width: 36,
+    height: 36,
+    borderRadius: radius.sm,
+    backgroundColor: colors.surface2,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptyGoalContent: {
+    flex: 1,
+  },
+  emptyGoalTitle: {
+    ...typography.titleSmall,
+    fontSize: 13,
+    color: colors.ink,
+  },
+  emptyGoalSubtitle: {
+    ...typography.bodySmall,
+    fontSize: 11,
+    color: colors.ink3,
+    marginTop: 2,
+  },
+  emptyGoalButton: {
+    backgroundColor: colors.primary,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 6,
+    borderRadius: radius.full,
+  },
+  emptyGoalButtonText: {
+    ...typography.titleSmall,
+    fontSize: 12,
+    color: '#0D0D0F',
+    fontWeight: '700',
   },
 });

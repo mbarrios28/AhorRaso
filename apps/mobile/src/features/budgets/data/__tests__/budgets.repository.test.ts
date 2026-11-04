@@ -260,7 +260,7 @@ describe('budgetsRepository.listActive y cálculo de gasto', () => {
       })
       .run();
 
-    const activeList = budgetsRepository.listActive(DEV_USER_ID);
+    const activeList = budgetsRepository.listActive(DEV_USER_ID, '2026-10-15');
     expect(activeList).toHaveLength(1);
 
     const budgetItem = activeList[0];

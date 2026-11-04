@@ -76,7 +76,18 @@ export default function TabsLayout() {
         }}
       />
 
-      {/* 5. Perfil y Ajustes */}
+      {/* 5. Metas de Ahorro (HU-08 / RF-007 / RF-014) */}
+      <Tabs.Screen
+        name="savings"
+        options={{
+          title: 'Metas',
+          tabBarIcon: ({ color, size }) => (
+            <Icon name="Target" size={size || 22} color={color} />
+          ),
+        }}
+      />
+
+      {/* 6. Perfil y Ajustes */}
       <Tabs.Screen
         name="profile"
         options={{

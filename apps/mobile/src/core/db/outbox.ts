@@ -8,7 +8,8 @@ export type OutboxEntity =
   | 'profile'
   | 'budgets'
   | 'notification_prefs'
-  | 'budget_alerts_history';
+  | 'budget_alerts_history'
+  | 'savings_goals';
 export type OutboxOp = 'upsert' | 'delete';
 
 export interface EnqueueOutboxParams {

@@ -212,6 +212,25 @@ export function initDatabase(): void {
     CREATE INDEX IF NOT EXISTS idx_budget_alerts_budget ON budget_alerts_history (budget_id);
     CREATE UNIQUE INDEX IF NOT EXISTS idx_budget_alerts_history_unique 
       ON budget_alerts_history (user_id, budget_id, period_start, threshold_percent);
+
+    -- Tabla: savings_goals (RF-007 / RF-014: Metas de Ahorro y Simulación)
+    CREATE TABLE IF NOT EXISTS savings_goals (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      target_amount_cents INTEGER NOT NULL CHECK (target_amount_cents > 0),
+      current_amount_cents INTEGER DEFAULT 0 NOT NULL CHECK (current_amount_cents >= 0),
+      periodic_savings_cents INTEGER NOT NULL CHECK (periodic_savings_cents > 0),
+      frequency TEXT NOT NULL CHECK (frequency IN ('weekly', 'biweekly', 'monthly')),
+      target_date TEXT NOT NULL,
+      status TEXT DEFAULT 'active' NOT NULL CHECK (status IN ('active', 'completed', 'cancelled')),
+      created_at TEXT NOT NULL,
+      updated_at TEXT,
+      deleted_at TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_savings_goals_user_status ON savings_goals (user_id, status);
+    CREATE INDEX IF NOT EXISTS idx_savings_goals_user_date ON savings_goals (user_id, created_at DESC);
   `);
 
   // 2. Sembrado de Profile inicial (DEV_USER_ID)
@@ -240,13 +259,7 @@ export function initDatabase(): void {
     );
   }
 
-
-
   // 3. Sembrado de Categorías iniciales por defecto (idempotente por fila).
-  //    Se inserta únicamente si no existe una categoría ACTIVA con el mismo
-  //    (nombre normalizado, tipo). Así se respeta el índice único parcial
-  //    `idx_categories_unique_name` y jamás se duplican ni se pisan categorías
-  //    personalizadas del usuario, sin importar cuántas veces se ejecute.
   const existingActive = sqliteDb.getAllSync<{ name: string; type: string }>(
     'SELECT name, type FROM categories WHERE user_id = ? AND deleted_at IS NULL',
     [DEV_USER_ID]
@@ -269,8 +282,6 @@ export function initDatabase(): void {
     );
     inserted += 1;
   }
-
-
 
   if (inserted > 0) {
     console.info(`[initDatabase] Semilla de categorías: ${inserted} categorías por defecto añadidas.`);
