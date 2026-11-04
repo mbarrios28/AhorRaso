@@ -255,7 +255,7 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ userId = DEV_USER_
             <Icon
               name={category?.icon || (isIncome ? 'Coins' : 'Tag')}
               size={18}
-              color={category?.color || (isIncome ? colors.secondary : colors.primary)}
+              color={category?.color || (isIncome ? colors.secondary : colors.tertiary)}
             />
           </View>
 
@@ -270,7 +270,7 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ userId = DEV_USER_
           </View>
 
           <View style={styles.rowRight}>
-            <Text style={[styles.rowAmount, isIncome && styles.rowAmountIncome]}>
+            <Text style={[styles.rowAmount, isIncome ? styles.rowAmountIncome : styles.rowAmountExpense]}>
               {isIncome ? '+ ' : '- '}
               {formatSoles(item.amountCents)}
             </Text>
@@ -756,6 +756,9 @@ const styles = StyleSheet.create({
   },
   rowAmountIncome: {
     color: colors.secondary,
+  },
+  rowAmountExpense: {
+    color: colors.tertiary,
   },
   rowType: {
     ...typography.bodySmall,

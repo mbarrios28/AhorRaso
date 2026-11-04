@@ -343,6 +343,36 @@ export const alertsRepository = {
     };
   },
 
+    /**
+   * Obtiene todas las alertas activas para los presupuestos vigentes del usuario (RF-011 / DSV-01).
+   * Evalúa nuevos umbrales reactivos y recupera alertas vigentes para presupuestos no eliminados.
+   */
+  getActiveAlerts(userId: string): BudgetAlertTriggered[] {
+    const evalResult = this.evaluateBudgetAlerts(userId);
+    const recent = this.getRecentAlerts(userId, 10);
+
+    const activeBudgets = db
+      .select({ id: budgets.id })
+      .from(budgets)
+      .where(and(eq(budgets.userId, userId), isNull(budgets.deletedAt)))
+      .all();
+    const activeBudgetIds = new Set(activeBudgets.map((b) => b.id));
+
+    const combined: BudgetAlertTriggered[] = [...evalResult.alerts];
+    for (const r of recent) {
+      if (
+        activeBudgetIds.has(r.budgetId) &&
+        !combined.some(
+          (c) => c.budgetId === r.budgetId && c.thresholdPercent === r.thresholdPercent
+        )
+      ) {
+        combined.push(r);
+      }
+    }
+
+    return combined;
+  },
+
   /**
    * Obtiene el historial de alertas emitidas recientemente.
    */

@@ -30,19 +30,8 @@ export default function BudgetsTab() {
       setActiveBudgets(list);
 
       // Evaluación reactiva de alertas de presupuesto (RF-011)
-      const evalResult = alertsRepository.evaluateBudgetAlerts(DEV_USER_ID);
-      const recent = alertsRepository.getRecentAlerts(DEV_USER_ID, 3);
-      const combined = [...evalResult.alerts];
-      for (const r of recent) {
-        if (
-          !combined.some(
-            (c) => c.budgetId === r.budgetId && c.thresholdPercent === r.thresholdPercent
-          )
-        ) {
-          combined.push(r);
-        }
-      }
-      setActiveAlerts(combined);
+      const alerts = alertsRepository.getActiveAlerts(DEV_USER_ID);
+      setActiveAlerts(alerts);
     } catch (e) {
       console.error('Error al cargar presupuestos y alertas:', e);
     }
