@@ -40,6 +40,29 @@ const PERIOD_OPTIONS: { label: string; value: BudgetPeriod; description: string 
   { label: 'Mensual', value: 'monthly', description: 'Mes calendario' },
 ];
 
+const FIXED_EXPENSE_CATEGORY_NAMES = new Set([
+  'servicios',
+  'educación',
+  'educacion',
+  'salud',
+  'vivienda',
+  'deudas y obligaciones',
+]);
+
+const VARIABLE_PRIORITY_ORDER: Record<string, number> = {
+  'alimentación': 1,
+  'alimentacion': 1,
+  'transporte': 2,
+  'diversión': 3,
+  'diversion': 3,
+  'compras': 4,
+  'otros gastos': 5,
+};
+
+function isFixedExpenseCategory(cat: Category): boolean {
+  return FIXED_EXPENSE_CATEGORY_NAMES.has(cat.name.trim().toLowerCase());
+}
+
 export const BudgetFormModal: React.FC<BudgetFormModalProps> = ({
   visible,
   onClose,
@@ -95,6 +118,7 @@ const BudgetForm: React.FC<BudgetFormProps> = ({
   const [periodType, setPeriodType] = useState<BudgetPeriod>(
     initialBudget?.periodType ?? 'monthly'
   );
+  const [showFixedCategories, setShowFixedCategories] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -104,12 +128,32 @@ const BudgetForm: React.FC<BudgetFormProps> = ({
       const cats = categoriesRepository.getByUser(userId, 'expense');
       setCategoriesList(cats);
       if (!isEdit && cats.length > 0 && !selectedCategoryId) {
-        setSelectedCategoryId(cats[0].id);
+        const firstVariable = cats.find((c) => !isFixedExpenseCategory(c)) ?? cats[0];
+        setSelectedCategoryId(firstVariable.id);
       }
     } catch (e) {
       console.error('Error al cargar categorías para presupuesto:', e);
     }
   }, [userId, isEdit, selectedCategoryId]);
+
+  const { variableCategories, fixedCategories } = React.useMemo(() => {
+    const variable: Category[] = [];
+    const fixed: Category[] = [];
+    for (const cat of categoriesList) {
+      if (isFixedExpenseCategory(cat)) {
+        fixed.push(cat);
+      } else {
+        variable.push(cat);
+      }
+    }
+    variable.sort((a, b) => {
+      const rankA = VARIABLE_PRIORITY_ORDER[a.name.trim().toLowerCase()] ?? 99;
+      const rankB = VARIABLE_PRIORITY_ORDER[b.name.trim().toLowerCase()] ?? 99;
+      if (rankA !== rankB) return rankA - rankB;
+      return a.sortOrder - b.sortOrder;
+    });
+    return { variableCategories: variable, fixedCategories: fixed };
+  }, [categoriesList]);
 
   const periodRange = calculatePeriodRange(periodType);
 
@@ -261,57 +305,137 @@ const BudgetForm: React.FC<BudgetFormProps> = ({
                     </View>
                   </View>
                 ) : (
-                  /* Modo Creación: selector horizontal de categorías */
-                  <ScrollView
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                    contentContainerStyle={styles.categoriesScroll}
-                  >
-                    {categoriesList.map((cat) => {
-                      const isSelected = cat.id === selectedCategoryId;
-                      return (
-                        <Pressable
-                          key={cat.id}
-                          onPress={() => {
-                            setSelectedCategoryId(cat.id);
-                            setError(null);
-                          }}
-                          style={[
-                            styles.categoryChip,
-                            isSelected && {
-                              borderColor: cat.color,
-                              backgroundColor: colors.surface2,
-                            },
-                          ]}
-                        >
-                          <View
+                  /* Modo Creación: agrupación inteligente (Gastos variables + Desplegable de gastos fijos) */
+                  <View style={styles.categorySectionContainer}>
+                    <ScrollView
+                      horizontal
+                      showsHorizontalScrollIndicator={false}
+                      contentContainerStyle={styles.categoriesScroll}
+                    >
+                      {variableCategories.map((cat) => {
+                        const isSelected = cat.id === selectedCategoryId;
+                        return (
+                          <Pressable
+                            key={cat.id}
+                            onPress={() => {
+                              setSelectedCategoryId(cat.id);
+                              setError(null);
+                            }}
                             style={[
-                              styles.catIconBox,
-                              {
-                                backgroundColor: isSelected ? cat.color : colors.surface,
-                                borderColor: colors.line,
+                              styles.categoryChip,
+                              isSelected && {
+                                borderColor: cat.color,
+                                backgroundColor: colors.surface2,
                               },
                             ]}
                           >
+                            <View
+                              style={[
+                                styles.catIconBox,
+                                {
+                                  backgroundColor: isSelected ? cat.color : colors.surface,
+                                  borderColor: colors.line,
+                                },
+                              ]}
+                            >
+                              <Icon
+                                name={cat.icon}
+                                size={16}
+                                color={isSelected ? '#FFFFFF' : cat.color}
+                              />
+                            </View>
+                            <Text
+                              style={[
+                                styles.categoryChipText,
+                                isSelected && { color: colors.ink, fontWeight: '700' },
+                              ]}
+                              numberOfLines={1}
+                            >
+                              {cat.name}
+                            </Text>
+                          </Pressable>
+                        );
+                      })}
+                    </ScrollView>
+
+                    {fixedCategories.length > 0 && (
+                      <View style={styles.fixedCategoriesSection}>
+                        <Pressable
+                          accessibilityRole="button"
+                          accessibilityLabel="Mostrar categorías de gastos fijos"
+                          onPress={() => setShowFixedCategories((prev) => !prev)}
+                          style={styles.fixedToggleBtn}
+                        >
+                          <View style={styles.fixedToggleLeft}>
                             <Icon
-                              name={cat.icon}
-                              size={16}
-                              color={isSelected ? '#FFFFFF' : cat.color}
+                              name={showFixedCategories ? 'ChevronUp' : 'ChevronDown'}
+                              size={15}
+                              color={colors.ink2}
                             />
+                            <Text style={styles.fixedToggleText}>
+                              Mostrar categorías de gastos fijos
+                            </Text>
                           </View>
-                          <Text
-                            style={[
-                              styles.categoryChipText,
-                              isSelected && { color: colors.ink, fontWeight: '700' },
-                            ]}
-                            numberOfLines={1}
-                          >
-                            {cat.name}
-                          </Text>
+                          <View style={styles.fixedCountBadge}>
+                            <Text style={styles.fixedCountText}>{fixedCategories.length}</Text>
+                          </View>
                         </Pressable>
-                      );
-                    })}
-                  </ScrollView>
+
+                        {showFixedCategories && (
+                          <ScrollView
+                            horizontal
+                            showsHorizontalScrollIndicator={false}
+                            contentContainerStyle={styles.categoriesScroll}
+                          >
+                            {fixedCategories.map((cat) => {
+                              const isSelected = cat.id === selectedCategoryId;
+                              return (
+                                <Pressable
+                                  key={cat.id}
+                                  onPress={() => {
+                                    setSelectedCategoryId(cat.id);
+                                    setError(null);
+                                  }}
+                                  style={[
+                                    styles.categoryChip,
+                                    isSelected && {
+                                      borderColor: cat.color,
+                                      backgroundColor: colors.surface2,
+                                    },
+                                  ]}
+                                >
+                                  <View
+                                    style={[
+                                      styles.catIconBox,
+                                      {
+                                        backgroundColor: isSelected ? cat.color : colors.surface,
+                                        borderColor: colors.line,
+                                      },
+                                    ]}
+                                  >
+                                    <Icon
+                                      name={cat.icon}
+                                      size={16}
+                                      color={isSelected ? '#FFFFFF' : cat.color}
+                                    />
+                                  </View>
+                                  <Text
+                                    style={[
+                                      styles.categoryChipText,
+                                      isSelected && { color: colors.ink, fontWeight: '700' },
+                                    ]}
+                                    numberOfLines={1}
+                                  >
+                                    {cat.name}
+                                  </Text>
+                                </Pressable>
+                              );
+                            })}
+                          </ScrollView>
+                        )}
+                      </View>
+                    )}
+                  </View>
                 )}
               </View>
 
@@ -485,6 +609,48 @@ const styles = StyleSheet.create({
   categoriesScroll: {
     gap: spacing.sm,
     paddingVertical: spacing.xxs,
+  },
+  categorySectionContainer: {
+    gap: spacing.xs,
+  },
+  fixedCategoriesSection: {
+    gap: spacing.xs,
+    marginTop: 2,
+  },
+  fixedToggleBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 8,
+    paddingHorizontal: spacing.sm,
+    borderRadius: radius.md,
+    backgroundColor: colors.surface2,
+    borderWidth: 1,
+    borderColor: colors.line,
+  },
+  fixedToggleLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  fixedToggleText: {
+    ...typography.bodySmall,
+    color: colors.ink2,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  fixedCountBadge: {
+    paddingHorizontal: 7,
+    paddingVertical: 1,
+    borderRadius: radius.full,
+    backgroundColor: colors.surface3,
+    borderWidth: 1,
+    borderColor: colors.line,
+  },
+  fixedCountText: {
+    ...typography.monoSmall,
+    color: colors.ink3,
+    fontSize: 10.5,
   },
   categoryChip: {
     flexDirection: 'row',

@@ -63,7 +63,7 @@ describe('getByUser / getById', () => {
     const custom = createCustom({ name: 'Mascotas', type: 'expense' });
     const all = categoriesRepository.getByUser(DEV_USER_ID);
 
-    expect(all).toHaveLength(17);
+    expect(all).toHaveLength(14);
     expect(all.map((c) => c.id)).toContain(custom.id);
     expect(all.map((c) => c.sortOrder)).toEqual(
       [...all.map((c) => c.sortOrder)].sort((a, b) => a - b),
@@ -76,7 +76,7 @@ describe('getByUser / getById', () => {
 
   it('filtra por tipo (income/expense)', () => {
     expect(categoriesRepository.getByUser(DEV_USER_ID, 'expense')).toHaveLength(10);
-    expect(categoriesRepository.getByUser(DEV_USER_ID, 'income')).toHaveLength(6);
+    expect(categoriesRepository.getByUser(DEV_USER_ID, 'income')).toHaveLength(3);
   });
 
   it('excluye las categorías soft-eliminadas', () => {

@@ -3,6 +3,7 @@ import {
   View,
   Text,
   StyleSheet,
+  TextInput,
   Pressable,
   ScrollView,
   KeyboardAvoidingView,
@@ -14,7 +15,7 @@ import * as Crypto from 'expo-crypto';
 import { colors, spacing, radius, typography, fontFamilies } from '@/core/theme';
 import { Icon } from '@/core/ui';
 import { DEV_USER_ID } from '@/core/dev/constants';
-import { db, merchants } from '@/core/db';
+import { db, merchants, profile } from '@/core/db';
 import { and, eq, isNull } from 'drizzle-orm';
 import { Category, categoriesRepository } from '@/features/categories';
 import { transactionsRepository } from '../data/transactions.repository';
@@ -34,6 +35,7 @@ export const NewExpenseScreen: React.FC = () => {
   const [placesList, setPlacesList] = useState<string[]>(FREQUENT_PLACES);
   const [learnedHints, setLearnedHints] = useState<string[]>([]);
   const [selectedDateOffset, setSelectedDateOffset] = useState<0 | 1>(0); // 0 = Hoy, 1 = Ayer
+  const [currentBalanceCents, setCurrentBalanceCents] = useState<number>(0);
 
   // Estado del modal de voz y banner de IA
   const [isVoiceModalOpen, setIsVoiceModalOpen] = useState(false);
@@ -59,6 +61,12 @@ export const NewExpenseScreen: React.FC = () => {
     let mounted = true;
     queueMicrotask(() => {
       try {
+        // 0. Saldo actual del usuario
+        const userProf = db.select().from(profile).where(eq(profile.id, DEV_USER_ID)).get();
+        if (mounted && userProf) {
+          setCurrentBalanceCents(userProf.initialBalanceCents);
+        }
+
         // 1. Categorías del usuario
         const cats = categoriesRepository.getByUser(DEV_USER_ID, 'expense');
         if (mounted) {
@@ -127,6 +135,27 @@ export const NewExpenseScreen: React.FC = () => {
     const val = parseFloat(c.amountStr) || 0;
     return sum + val;
   }, 0);
+  const totalAmountCents = Math.round(totalAmount * 100);
+  const projectedBalanceCents = currentBalanceCents - totalAmountCents;
+
+  // Card activa para el bloque Hero superior de monto
+  const activeCard = useMemo(
+    () => cards.find((c) => c.id === openCardId) ?? cards[0],
+    [cards, openCardId]
+  );
+
+  const handleHeroAmountChange = (val: string) => {
+    if (!activeCard) return;
+    const sanitized = val.replace(/[^0-9.]/g, '');
+    handleUpdateCard(activeCard.id, { amountStr: sanitized });
+  };
+
+  const handleHeroQuickAdd = (extra: number) => {
+    if (!activeCard) return;
+    const current = parseFloat(activeCard.amountStr) || 0;
+    const next = (current + extra).toFixed(2);
+    handleUpdateCard(activeCard.id, { amountStr: next });
+  };
 
   // Toggle de acordeón para una card
   const handleToggleCard = (cardId: string) => {
@@ -353,23 +382,17 @@ export const NewExpenseScreen: React.FC = () => {
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={styles.keyboardView}
       >
-        {/* Header con botón de voz integrado */}
+        {/* Header con botón de voz integrado (simétrico con NewIncomeScreen) */}
         <View style={styles.header}>
-          <View style={styles.headerLeft}>
-            <Pressable
-              onPress={() => router.back()}
-              style={styles.headerButton}
-              accessibilityLabel="Cerrar formulario"
-            >
-              <Icon name="X" size={20} color={colors.ink2} />
-            </Pressable>
-            <View>
-              <Text style={styles.headerTitle}>Registrar gastos</Text>
-              <Text style={styles.headerSubtitle}>
-                {cards.length} {cards.length === 1 ? 'compra en lista' : 'compras en lista'}
-              </Text>
-            </View>
-          </View>
+          <Pressable
+            onPress={() => router.back()}
+            style={styles.headerButton}
+            accessibilityLabel="Cerrar formulario"
+          >
+            <Icon name="X" size={22} color={colors.ink2} />
+          </Pressable>
+
+          <Text style={styles.headerTitle}>Registrar gasto</Text>
 
           {/* Botón de Dictado por Voz Inteligente */}
           <Pressable
@@ -378,7 +401,7 @@ export const NewExpenseScreen: React.FC = () => {
             accessibilityRole="button"
             accessibilityLabel="Activar dictado por voz"
           >
-            <Icon name="Mic" size={17} color={colors.primary} />
+            <Icon name="Mic" size={17} color={colors.tertiary} />
             <Text style={styles.micBtnText}>Dictar</Text>
           </Pressable>
         </View>
@@ -387,7 +410,57 @@ export const NewExpenseScreen: React.FC = () => {
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.scrollContent}
         >
-          {/* Fecha y Estado Offline */}
+          {/* 1. Sección de Monto Hero Protagonista */}
+          <View style={styles.amountSection}>
+            <Text style={styles.sectionLabel}>
+              {cards.length > 1
+                ? `MONTO DE COMPRA #${cards.findIndex((c) => c.id === activeCard?.id) + 1}`
+                : 'MONTO DEL GASTO'}
+            </Text>
+            <View style={styles.amountInputRow}>
+              <Text style={styles.currencyPrefix}>- S/</Text>
+              <TextInput
+                value={activeCard?.amountStr ?? ''}
+                onChangeText={handleHeroAmountChange}
+                placeholder="0.00"
+                placeholderTextColor={colors.ink3}
+                keyboardType="decimal-pad"
+                style={styles.amountInput}
+                selectTextOnFocus
+              />
+            </View>
+
+            {/* Chips de incremento rápido */}
+            <View style={styles.quickAddRow}>
+              {[5, 10, 20, 50].map((add) => (
+                <Pressable
+                  key={add}
+                  onPress={() => handleHeroQuickAdd(add)}
+                  style={styles.quickChip}
+                >
+                  <Text style={styles.quickChipText}>+ {add}</Text>
+                </Pressable>
+              ))}
+            </View>
+          </View>
+
+          {/* Banner de Feedback de IA tras dictado */}
+          {aiBannerText && (
+            <View style={styles.aiBanner}>
+              <View style={styles.aiBannerLeft}>
+                <Icon name="Sparkles" size={18} color={colors.tertiary} />
+                <Text style={styles.aiBannerText}>{aiBannerText}</Text>
+              </View>
+              <Pressable
+                onPress={() => setAiBannerText(null)}
+                style={styles.closeAiBannerBtn}
+              >
+                <Icon name="X" size={16} color={colors.ink3} />
+              </Pressable>
+            </View>
+          )}
+
+          {/* 2. Fecha y Estado Offline */}
           <View style={styles.metaRow}>
             <View style={styles.dateSelector}>
               <Pressable
@@ -430,22 +503,6 @@ export const NewExpenseScreen: React.FC = () => {
               <Text style={styles.offlineText}>Offline</Text>
             </View>
           </View>
-
-          {/* Banner de Feedback de IA tras dictado */}
-          {aiBannerText && (
-            <View style={styles.aiBanner}>
-              <View style={styles.aiBannerLeft}>
-                <Icon name="Sparkles" size={18} color={colors.primary} />
-                <Text style={styles.aiBannerText}>{aiBannerText}</Text>
-              </View>
-              <Pressable
-                onPress={() => setAiBannerText(null)}
-                style={styles.closeAiBannerBtn}
-              >
-                <Icon name="X" size={16} color={colors.ink3} />
-              </Pressable>
-            </View>
-          )}
 
           {/* Encabezado de la lista con botón para agregar otra compra */}
           <View style={styles.listHeaderRow}>
@@ -501,6 +558,20 @@ export const NewExpenseScreen: React.FC = () => {
               <Text style={styles.errorMessage}>{errorMsg}</Text>
             </View>
           )}
+
+          {/* Tarjeta de Impacto en el Saldo justo encima del botón principal */}
+          <View style={styles.hintCard}>
+            <Icon name="TrendingDown" size={18} color={colors.tertiary} />
+            <View style={styles.hintContent}>
+              <Text style={styles.hintTitle}>Impacto en tu saldo</Text>
+              <Text style={styles.hintText}>
+                Saldo actual: S/ {(currentBalanceCents / 100).toFixed(2)} → Pasará a:{' '}
+                <Text style={styles.hintHighlight}>
+                  S/ {(projectedBalanceCents / 100).toFixed(2)}
+                </Text>
+              </Text>
+            </View>
+          </View>
         </ScrollView>
 
         {/* Sticky Footer Dinámico con Total General */}
@@ -584,9 +655,9 @@ const styles = StyleSheet.create({
     height: 36,
     paddingHorizontal: 14,
     borderRadius: radius.full,
-    backgroundColor: 'rgba(16, 185, 129, 0.1)',
+    backgroundColor: 'rgba(223, 108, 107, 0.12)',
     borderWidth: 1,
-    borderColor: 'rgba(16, 185, 129, 0.3)',
+    borderColor: 'rgba(223, 108, 107, 0.35)',
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
@@ -594,7 +665,7 @@ const styles = StyleSheet.create({
   micBtnText: {
     fontFamily: fontFamilies.monoBold,
     fontSize: 11,
-    color: colors.primary,
+    color: colors.tertiary,
     letterSpacing: 0.8,
     textTransform: 'uppercase',
   },
@@ -602,6 +673,54 @@ const styles = StyleSheet.create({
     padding: spacing.gutter,
     paddingBottom: 40,
     gap: spacing.base,
+  },
+  amountSection: {
+    alignItems: 'center',
+    paddingVertical: spacing.md,
+  },
+  sectionLabel: {
+    ...typography.labelSmall,
+    color: colors.ink3,
+    marginBottom: spacing.xs,
+  },
+  amountInputRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: spacing.xs,
+    justifyContent: 'center',
+  },
+  currencyPrefix: {
+    ...typography.monoMedium,
+    fontSize: 22,
+    color: colors.tertiary,
+    fontWeight: '700',
+  },
+  amountInput: {
+    ...typography.amountHero,
+    color: colors.ink,
+    minWidth: 180,
+    textAlign: 'center',
+    padding: 0,
+  },
+  quickAddRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginTop: spacing.md,
+  },
+  quickChip: {
+    paddingHorizontal: spacing.base,
+    height: 32,
+    borderRadius: radius.full,
+    backgroundColor: colors.surface2,
+    borderColor: colors.line,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  quickChipText: {
+    ...typography.monoSmall,
+    color: colors.ink2,
+    fontSize: 12,
   },
   metaRow: {
     flexDirection: 'row',
@@ -748,6 +867,36 @@ const styles = StyleSheet.create({
   errorMessage: {
     ...typography.bodySmall,
     color: colors.danger,
+  },
+  hintCard: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.sm,
+    backgroundColor: colors.surface,
+    borderColor: 'rgba(223, 108, 107, 0.35)',
+    borderWidth: 1,
+    padding: spacing.base,
+    borderRadius: radius.md,
+    marginTop: spacing.xs,
+  },
+  hintContent: {
+    flex: 1,
+    gap: 2,
+  },
+  hintTitle: {
+    ...typography.labelSmall,
+    color: colors.ink,
+    fontSize: 12,
+  },
+  hintText: {
+    ...typography.bodySmall,
+    color: colors.ink2,
+    lineHeight: 16,
+    fontSize: 12,
+  },
+  hintHighlight: {
+    fontFamily: fontFamilies.monoBold,
+    color: colors.tertiary,
   },
   footer: {
     padding: spacing.gutter,

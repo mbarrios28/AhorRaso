@@ -28,12 +28,9 @@ export const DEFAULT_CATEGORIES = [
   { name: 'Deudas y obligaciones', type: 'expense' as const, icon: 'CreditCard', color: '#DF6C6B', sortOrder: 9 },
   { name: 'Otros gastos', type: 'expense' as const, icon: 'Tag', color: '#64748B', sortOrder: 10 },
   // ── Ingresos ──
-  { name: 'Sueldo', type: 'income' as const, icon: 'Wallet', color: '#10B981', sortOrder: 7 },
-  { name: 'Propina', type: 'income' as const, icon: 'Gift', color: '#22C55E', sortOrder: 8 },
-  { name: 'Trabajo independiente', type: 'income' as const, icon: 'Briefcase', color: '#0EA371', sortOrder: 9 },
-  { name: 'Negocios', type: 'income' as const, icon: 'Store', color: '#14B8A6', sortOrder: 10 },
-  { name: 'Inversiones', type: 'income' as const, icon: 'TrendingUp', color: '#3B82F6', sortOrder: 11 },
-  { name: 'Otros ingresos', type: 'income' as const, icon: 'Coins', color: '#64748B', sortOrder: 12 },
+  { name: 'Sueldo', type: 'income' as const, icon: 'Wallet', color: '#10B981', sortOrder: 11 },
+  { name: 'Propina', type: 'income' as const, icon: 'Gift', color: '#22C55E', sortOrder: 12 },
+  { name: 'Otros ingresos', type: 'income' as const, icon: 'Coins', color: '#64748B', sortOrder: 13 },
 ] as const;
 
 /**
