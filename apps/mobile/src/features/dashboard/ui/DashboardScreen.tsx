@@ -11,6 +11,7 @@ import { DashboardSummary } from '../domain/types';
 import { dashboardRepository } from '../data/dashboard.repository';
 import { savingsRepository, SavingsGoalWithSimulation } from '@/features/savings';
 import { alertsRepository, AlertBanner, BudgetAlertTriggered } from '@/features/alerts';
+import { analyticsRepository, ConsumptionAnalysisReport } from '@/features/analytics';
 
 /**
  * Pantalla principal del Dashboard Financiero (RF-008 / HU-04).
@@ -21,6 +22,9 @@ export function DashboardScreen() {
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [primaryGoal, setPrimaryGoal] = useState<SavingsGoalWithSimulation | null>(null);
   const [budgetAlerts, setBudgetAlerts] = useState<BudgetAlertTriggered[]>([]);
+  const [analyticsReport, setAnalyticsReport] = useState<ConsumptionAnalysisReport | null>(
+    null
+  );
 
   // useFocusEffect se ejecuta cada vez que el usuario vuelve a la pantalla
   // Garantiza RNF-003: carga síncrona inmediata desde SQLite local en < 50 ms.
@@ -43,6 +47,10 @@ export function DashboardScreen() {
         alertsRepository.evaluateBudgetAlerts(DEV_USER_ID);
         const activeAlerts = alertsRepository.getActiveAlerts(DEV_USER_ID);
         setBudgetAlerts(activeAlerts);
+
+        // 5. Resumen analítico de patrones y recomendaciones (HU-09 / RF-012 / RF-013)
+        const report = analyticsRepository.getConsumptionReport(DEV_USER_ID);
+        setAnalyticsReport(report);
       } catch (e) {
         console.error('Error al actualizar datos del dashboard:', e);
       }
@@ -205,11 +213,51 @@ export function DashboardScreen() {
           </Text>
         </View>
 
+        {/* Acceso Directo Destacado: Análisis de Patrones y Recomendaciones IA (HU-09 / RF-012 / RF-013) */}
+        <Pressable
+          onPress={() => router.push('/analytics')}
+          style={({ pressed }) => [
+            styles.insightsBannerCard,
+            pressed && { opacity: 0.92, transform: [{ scale: 0.99 }] },
+          ]}
+          accessibilityRole="button"
+          accessibilityLabel="Abrir análisis de patrones de consumo y recomendaciones de ahorro"
+        >
+          <View style={styles.insightsIconBox}>
+            <Icon name="Sparkles" size={18} color="#0D0D0F" />
+          </View>
+          <View style={styles.insightsContent}>
+            <View style={styles.insightsHeaderRow}>
+              <Text style={styles.insightsTitle}>Análisis de Consumo e Insights</Text>
+              {analyticsReport && analyticsReport.totalPotentialSavingsCents > 0 && (
+                <View style={styles.insightsSavingsPill}>
+                  <Text style={styles.insightsSavingsText}>
+                    Ahorra S/ {(analyticsReport.totalPotentialSavingsCents / 100).toFixed(2)}
+                  </Text>
+                </View>
+              )}
+            </View>
+            <Text style={styles.insightsSubtitle} numberOfLines={2}>
+              {analyticsReport && analyticsReport.recommendations.length > 0
+                ? analyticsReport.recommendations[0].title
+                : 'Descubre tus gastos hormiga, día pico y recomendaciones de ahorro.'}
+            </Text>
+          </View>
+          <Icon name="ChevronRight" size={18} color={colors.primary} />
+        </Pressable>
+
         {/* 6. Gastos por Categoría (RF-008 / HU-04) */}
         <View style={styles.section}>
           <View style={styles.sectionHeaderRow}>
             <Text style={styles.sectionTitle}>GASTOS POR CATEGORÍA</Text>
-            <Text style={styles.sectionHint}>{summary?.monthName?.toUpperCase() || 'OCTUBRE'}</Text>
+            <Pressable
+              onPress={() => router.push('/analytics')}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel="Ver análisis completo por categoría"
+            >
+              <Text style={styles.sectionActionText}>VER ANÁLISIS</Text>
+            </Pressable>
           </View>
 
           {!summary || summary.categoryExpenses.length === 0 ? (
@@ -623,6 +671,57 @@ const styles = StyleSheet.create({
     fontSize: 10,
     color: colors.ink3,
     marginTop: 2,
+  },
+  insightsBannerCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    backgroundColor: colors.surface,
+    borderColor: 'rgba(16, 185, 129, 0.35)',
+    borderWidth: 1,
+    borderRadius: radius.md,
+    padding: spacing.md,
+  },
+  insightsIconBox: {
+    width: 36,
+    height: 36,
+    borderRadius: radius.sm,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  insightsContent: {
+    flex: 1,
+    gap: 2,
+  },
+  insightsHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.xs,
+  },
+  insightsTitle: {
+    ...typography.titleSmall,
+    fontSize: 13.5,
+    color: colors.ink,
+    fontWeight: '700',
+  },
+  insightsSavingsPill: {
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: radius.full,
+    backgroundColor: 'rgba(34, 197, 94, 0.14)',
+  },
+  insightsSavingsText: {
+    ...typography.monoSmall,
+    fontSize: 10,
+    color: colors.secondary,
+    fontWeight: '700',
+  },
+  insightsSubtitle: {
+    ...typography.bodySmall,
+    color: colors.ink2,
+    fontSize: 11.5,
   },
   section: {
     gap: spacing.xs,

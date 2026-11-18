@@ -228,6 +228,18 @@ export function initDatabase(): void {
 
     CREATE INDEX IF NOT EXISTS idx_savings_goals_user_status ON savings_goals (user_id, status);
     CREATE INDEX IF NOT EXISTS idx_savings_goals_user_date ON savings_goals (user_id, created_at DESC);
+
+    -- Tabla: ai_cache (RF-012 / RF-013: Caché Local de Analítica de Consumo y Recomendaciones)
+    CREATE TABLE IF NOT EXISTS ai_cache (
+      cache_key TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      data_hash TEXT NOT NULL,
+      payload TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      expires_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_ai_cache_user ON ai_cache (user_id);
   `);
 
   // 2. Sembrado de Profile inicial (DEV_USER_ID)

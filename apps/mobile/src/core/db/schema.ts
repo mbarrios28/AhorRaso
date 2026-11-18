@@ -288,3 +288,25 @@ export const savingsGoals = sqliteTable(
 
 export type SavingsGoal = typeof savingsGoals.$inferSelect;
 export type InsertSavingsGoal = typeof savingsGoals.$inferInsert;
+
+// ==========================================
+// 11. TABLA: ai_cache (RF-012 / RF-013: Caché Local de Analítica e IA)
+// ==========================================
+export const aiCache = sqliteTable(
+  'ai_cache',
+  {
+    cacheKey: text('cache_key').primaryKey(),
+    userId: text('user_id').notNull(),
+    dataHash: text('data_hash').notNull(),
+    payload: text('payload').notNull(), // JSON serializado del ConsumptionAnalysisReport
+    createdAt: text('created_at').notNull(),
+    expiresAt: text('expires_at').notNull(),
+  },
+  (table) => [
+    index('idx_ai_cache_user').on(table.userId),
+  ]
+);
+
+export type AiCacheEntry = typeof aiCache.$inferSelect;
+export type InsertAiCacheEntry = typeof aiCache.$inferInsert;
+

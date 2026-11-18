@@ -41,6 +41,7 @@ export function resetDatabase({ seed = true }: { seed?: boolean } = {}): void {
   sqliteDb.execSync('BEGIN');
   try {
     sqliteDb.execSync(`
+      DELETE FROM ai_cache;
       DELETE FROM outbox;
       DELETE FROM voice_learning;
       DELETE FROM savings_goals;
@@ -87,6 +88,7 @@ export function countRows(
     | 'notification_prefs'
     | 'budget_alerts_history'
     | 'savings_goals'
+    | 'ai_cache'
 ): number {
   const row = sqliteDb.getFirstSync<{ total: number }>(`SELECT count(*) AS total FROM ${table}`);
   return row?.total ?? 0;
