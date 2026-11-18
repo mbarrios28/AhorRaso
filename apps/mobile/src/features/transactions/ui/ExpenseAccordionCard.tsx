@@ -18,6 +18,7 @@ export interface ExpenseItemState {
   place: string;
   paymentMethod: PaymentMethod;
   note: string;
+  occurredOn?: string;
   entryMethod: 'manual' | 'voice';
 }
 
@@ -26,6 +27,7 @@ interface ExpenseAccordionCardProps {
   index: number;
   isOpen: boolean;
   canDelete: boolean;
+  sessionDate?: string;
   onToggle: () => void;
   onDelete: () => void;
   onUpdate: (updated: Partial<ExpenseItemState>) => void;
@@ -38,6 +40,7 @@ export const ExpenseAccordionCard: React.FC<ExpenseAccordionCardProps> = ({
   index,
   isOpen,
   canDelete,
+  sessionDate,
   onToggle,
   onDelete,
   onUpdate,
@@ -57,9 +60,11 @@ export const ExpenseAccordionCard: React.FC<ExpenseAccordionCardProps> = ({
   const categoryColor = card.selectedCategory?.color;
   const cardTitle = card.place.trim() || (card.selectedCategory?.name ?? `Gasto ${index + 1}`);
   const paymentLabel = card.paymentMethod === 'digital' ? 'Digital' : 'Efectivo';
+  const hasCustomDate = Boolean(card.occurredOn && sessionDate && card.occurredOn !== sessionDate);
+  const datePart = hasCustomDate ? ` · ${card.occurredOn}` : '';
   const subtitle = card.note.trim()
-    ? `${paymentLabel} · ${card.note}`
-    : `${paymentLabel} · Toca para editar`;
+    ? `${paymentLabel}${datePart} · ${card.note}`
+    : `${paymentLabel}${datePart} · Toca para editar`;
 
   return (
     <View style={styles.cardContainer}>

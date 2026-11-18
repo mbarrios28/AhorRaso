@@ -5,10 +5,9 @@
  * (ver `test/mocks/expo-sqlite.ts`), por lo que cada archivo de prueba
  * arranca con un estado aislado y los tests pueden resetearlo a voluntad.
  */
-import { sqliteDb, outbox, OutboxItem } from '@/core/db';
+import { db, sqliteDb, outbox, OutboxItem } from '@/core/db';
 import { initDatabase } from '@/core/db/init';
 import { and, eq } from 'drizzle-orm';
-import { db } from '@/core/db';
 
 /** Segundo usuario local para pruebas de aislamiento (RNF-005). */
 export const OTHER_USER_ID = '00000000-0000-4000-a000-000000000002';
@@ -43,6 +42,7 @@ export function resetDatabase({ seed = true }: { seed?: boolean } = {}): void {
   try {
     sqliteDb.execSync(`
       DELETE FROM outbox;
+      DELETE FROM voice_learning;
       DELETE FROM savings_goals;
       DELETE FROM budget_alerts_history;
       DELETE FROM notification_prefs;

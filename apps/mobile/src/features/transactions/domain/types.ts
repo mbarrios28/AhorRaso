@@ -31,12 +31,28 @@ export const createIncomeSchema = z.object({
 
 export type CreateIncomeInput = z.input<typeof createIncomeSchema>;
 
+export interface SpeechAlternative {
+  transcript: string;
+  confidence: number; // 0..1 or -1 when unavailable from native STT
+}
+
 export interface ParsedVoiceExpense {
   amountCents: number;
   categoryName?: string;
   categoryId?: string;
   merchantName?: string;
   paymentMethod: PaymentMethod;
+  note?: string;
+  occurredOn: string; // YYYY-MM-DD
+  confidence: number;
+  rawSegment: string;
+}
+
+export interface ParsedVoiceIncome {
+  amountCents: number;
+  categoryName?: string;
+  categoryId?: string;
+  source: string;
   note?: string;
   occurredOn: string; // YYYY-MM-DD
   confidence: number;

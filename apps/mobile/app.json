@@ -40,10 +40,19 @@
           "microphonePermission": "Permite a AhorRaso acceder a tu micrófono para registrar gastos por voz.",
           "speechRecognitionPermission": "Permite a AhorRaso reconocer y transcribir tus gastos hablados.",
           "androidSpeechServicePackages": [
-            "com.google.android.googlequicksearchbox"
+            "com.google.android.as",
+            "com.google.android.googlequicksearchbox",
+            "com.google.android.tts"
           ]
         }
       ]
-    ]
+    ],
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "f21b54a9-c059-4cf6-a5f9-f9e723843d50"
+      }
+    },
+    "owner": "jcode123"
   }
 }

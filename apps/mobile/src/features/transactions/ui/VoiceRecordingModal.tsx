@@ -13,100 +13,140 @@ import {
 } from 'react-native';
 import { colors, spacing, radius, typography, fontFamilies } from '@/core/theme';
 import { Icon } from '@/core/ui';
+import { SpeechAlternative } from '../domain/types';
 import { useVoiceRecognition } from '../domain/useVoiceRecognition';
 
 interface VoiceRecordingModalProps {
   visible: boolean;
+  mode?: 'expense' | 'income';
+  contextualHints?: string[];
   onClose: () => void;
-  onProcessTranscript: (transcript: string) => void;
+  onProcessTranscript: (transcript: string, alternatives?: SpeechAlternative[]) => void;
 }
+
+const BAR_FACTORS = [0.55, 0.85, 1.0, 0.9, 0.72, 0.48];
 
 export const VoiceRecordingModal: React.FC<VoiceRecordingModalProps> = ({
   visible,
+  mode = 'expense',
+  contextualHints,
   onClose,
   onProcessTranscript,
 }) => {
   const [isOrganizing, setIsOrganizing] = useState(false);
+  const mountedRef = useRef(true);
+
   const {
     isListening,
     transcript,
+    audioLevel,
+    isOnDevice,
     error,
     isExpoGo,
     startListening,
-    stopListening,
+    stopListeningAsync,
     cancelListening,
     setTranscript,
-  } = useVoiceRecognition();
+  } = useVoiceRecognition({ contextualHints });
 
   const inputRef = useRef<TextInput>(null);
 
-  // Animaciones para las barras de onda de voz
-  const waveAnim1 = useRef(new Animated.Value(6)).current;
-  const waveAnim2 = useRef(new Animated.Value(6)).current;
-  const waveAnim3 = useRef(new Animated.Value(6)).current;
-  const waveAnim4 = useRef(new Animated.Value(6)).current;
-  const waveAnim5 = useRef(new Animated.Value(6)).current;
-  const waveAnim6 = useRef(new Animated.Value(6)).current;
+  const [waveAnims] = useState(() => BAR_FACTORS.map(() => new Animated.Value(6)));
 
-  // Iniciar reconocimiento al abrir el modal
   useEffect(() => {
-    let animLoop: Animated.CompositeAnimation | null = null;
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
+  // Iniciar / detener escucha cuando se abre o cierra el modal
+  useEffect(() => {
     if (visible) {
       startListening();
-
-      // Animación de barras ondulantes continuas
-      const createBarAnim = (anim: Animated.Value, minH: number, maxH: number, duration: number) => {
-        return Animated.loop(
-          Animated.sequence([
-            Animated.timing(anim, {
-              toValue: maxH,
-              duration,
-              useNativeDriver: false,
-            }),
-            Animated.timing(anim, {
-              toValue: minH,
-              duration,
-              useNativeDriver: false,
-            }),
-          ])
-        );
-      };
-
-      const anims = [
-        createBarAnim(waveAnim1, 6, 26, 450),
-        createBarAnim(waveAnim2, 8, 30, 350),
-        createBarAnim(waveAnim3, 4, 34, 550),
-        createBarAnim(waveAnim4, 6, 28, 400),
-        createBarAnim(waveAnim5, 5, 32, 500),
-        createBarAnim(waveAnim6, 7, 24, 380),
-      ];
-
-      animLoop = Animated.parallel(anims);
-      animLoop.start();
     } else {
       cancelListening();
     }
+  }, [visible, startListening, cancelListening]);
 
-    return () => {
-      animLoop?.stop();
-    };
-  }, [visible, startListening, cancelListening, waveAnim1, waveAnim2, waveAnim3, waveAnim4, waveAnim5, waveAnim6]);
+  // Animar barras de forma reactiva con el nivel real del micrófono (`volumechange`)
+  // o un pulso suave cuando está escuchando sin señal de volumen (Web / silencio)
+  useEffect(() => {
+    if (!visible) return;
 
-  const handleFinish = () => {
+    if (isListening && audioLevel > 0.03) {
+      const animations = waveAnims.map((anim, idx) => {
+        const target = Math.min(36, 6 + audioLevel * 30 * BAR_FACTORS[idx]);
+        return Animated.timing(anim, {
+          toValue: target,
+          duration: 90,
+          useNativeDriver: false,
+        });
+      });
+      const batch = Animated.parallel(animations);
+      batch.start();
+      return () => batch.stop();
+    }
+
+    if (isListening) {
+      const idleLoop = Animated.parallel(
+        waveAnims.map((anim, idx) =>
+          Animated.loop(
+            Animated.sequence([
+              Animated.timing(anim, {
+                toValue: 9 + (idx % 3) * 2,
+                duration: 420 + idx * 55,
+                useNativeDriver: false,
+              }),
+              Animated.timing(anim, {
+                toValue: 6,
+                duration: 420 + idx * 55,
+                useNativeDriver: false,
+              }),
+            ])
+          )
+        )
+      );
+      idleLoop.start();
+      return () => idleLoop.stop();
+    }
+
+    const settle = Animated.parallel(
+      waveAnims.map((anim) =>
+        Animated.timing(anim, {
+          toValue: 6,
+          duration: 150,
+          useNativeDriver: false,
+        })
+      )
+    );
+    settle.start();
+    return () => settle.stop();
+  }, [visible, isListening, audioLevel, waveAnims]);
+
+  const handleFinish = async () => {
     if (isOrganizing) return;
     setIsOrganizing(true);
-    // 1. Detener escucha nativa para que Android comience a vaciar su buffer de audio
-    stopListening();
 
-    // 2. Esperar 480ms mientras se muestra el spinner para capturar la última palabra hablada
-    setTimeout(() => {
+    try {
+      const finalResult = await stopListeningAsync();
+      if (!mountedRef.current) return;
+
+      setIsOrganizing(false);
+      onClose();
+
+      const finalTranscript = (finalResult.transcript || transcript).trim();
+      if (finalTranscript) {
+        onProcessTranscript(finalTranscript, finalResult.alternatives);
+      }
+    } catch {
+      if (!mountedRef.current) return;
       setIsOrganizing(false);
       onClose();
       if (transcript.trim()) {
         onProcessTranscript(transcript.trim());
       }
-    }, 480);
+    }
   };
 
   const handleCancel = () => {
@@ -118,6 +158,13 @@ export const VoiceRecordingModal: React.FC<VoiceRecordingModalProps> = ({
   const handleQuickPreset = (presetText: string) => {
     setTranscript(presetText);
   };
+
+  const isIncomeMode = mode === 'income';
+  const badgeLabel = isExpoGo
+    ? 'DICTADO POR VOZ'
+    : isOnDevice
+    ? 'MANOS LIBRES · 100% OFFLINE'
+    : 'MODO MANOS LIBRES ACTIVO';
 
   return (
     <Modal
@@ -135,9 +182,7 @@ export const VoiceRecordingModal: React.FC<VoiceRecordingModalProps> = ({
           <View style={styles.modalHeader}>
             <View style={styles.handsFreeBadge}>
               <Icon name="Mic" size={14} color={colors.primary} />
-              <Text style={styles.handsFreeText}>
-                {isExpoGo ? 'DICTADO POR VOZ' : 'MODO MANOS LIBRES ACTIVO'}
-              </Text>
+              <Text style={styles.handsFreeText}>{badgeLabel}</Text>
             </View>
             <Pressable
               onPress={handleCancel}
@@ -148,14 +193,11 @@ export const VoiceRecordingModal: React.FC<VoiceRecordingModalProps> = ({
             </Pressable>
           </View>
 
-          {/* Animación de Ondas Sonoras */}
+          {/* Animación de Ondas Sonoras reactiva al micrófono */}
           <View style={styles.waveformContainer}>
-            <Animated.View style={[styles.waveBar, { height: waveAnim1 }]} />
-            <Animated.View style={[styles.waveBar, { height: waveAnim2 }]} />
-            <Animated.View style={[styles.waveBar, { height: waveAnim3 }]} />
-            <Animated.View style={[styles.waveBar, { height: waveAnim4 }]} />
-            <Animated.View style={[styles.waveBar, { height: waveAnim5 }]} />
-            <Animated.View style={[styles.waveBar, { height: waveAnim6 }]} />
+            {waveAnims.map((anim, idx) => (
+              <Animated.View key={idx} style={[styles.waveBar, { height: anim }]} />
+            ))}
           </View>
 
           {/* Caja Interactiva de Transcripción y Dictado */}
@@ -178,6 +220,8 @@ export const VoiceRecordingModal: React.FC<VoiceRecordingModalProps> = ({
               placeholder={
                 isExpoGo
                   ? 'Toca aquí y presiona el micro del teclado para hablar...'
+                  : isIncomeMode
+                  ? 'Escuchando... Di tu ingreso con confianza.'
                   : 'Escuchando... Di tus gastos con confianza.'
               }
               placeholderTextColor={colors.ink3}
@@ -194,12 +238,27 @@ export const VoiceRecordingModal: React.FC<VoiceRecordingModalProps> = ({
               <Icon name="Compass" size={13} color={colors.primary} />
               <Text style={styles.patternNoticeLabel}>PATRÓN SUGERIDO PARA MAYOR PRECISIÓN:</Text>
             </View>
-            <Text style={styles.patternNoticeFormula}>
-              [Monto] <Text style={styles.patternDim}>en</Text> [Qué] <Text style={styles.patternDim}>en</Text> [Dónde] <Text style={styles.patternDim}>por</Text> [Pago]
-            </Text>
-            <Text style={styles.patternNoticeExample}>
-              Ej: "15 soles en almuerzo en Tambo por yape"
-            </Text>
+            {isIncomeMode ? (
+              <>
+                <Text style={styles.patternNoticeFormula}>
+                  [Acción] [Monto] <Text style={styles.patternDim}>de</Text> [Fuente o Categoría]
+                </Text>
+                <Text style={styles.patternNoticeExample}>
+                  {'Ej: "Hoy recibí 500 soles de sueldo de la empresa"'}
+                </Text>
+              </>
+            ) : (
+              <>
+                <Text style={styles.patternNoticeFormula}>
+                  [Monto] <Text style={styles.patternDim}>en</Text> [Qué]{' '}
+                  <Text style={styles.patternDim}>en</Text> [Dónde]{' '}
+                  <Text style={styles.patternDim}>por</Text> [Pago]
+                </Text>
+                <Text style={styles.patternNoticeExample}>
+                  {'Ej: "15 soles en almuerzo en Tambo por yape"'}
+                </Text>
+              </>
+            )}
           </View>
 
           {/* Indicación de Expo Go / Teclado */}
@@ -219,36 +278,73 @@ export const VoiceRecordingModal: React.FC<VoiceRecordingModalProps> = ({
           {/* Presets rápidos para probar en 1 toque */}
           <View style={styles.presetsSection}>
             <Text style={styles.presetsLabel}>O PRUEBA CON UN EJEMPLO EN 1 TOQUE:</Text>
-            <View style={styles.presetsRow}>
-              <Pressable
-                onPress={() => handleQuickPreset('15 soles en almuerzo en Tambo por yape')}
-                style={styles.presetChip}
-              >
-                <Text style={styles.presetChipText}>Patrón ideal: 15 soles almuerzo Tambo yape</Text>
-              </Pressable>
-              <Pressable
-                onPress={() => handleQuickPreset('Menú 15 soles y taxi 5 soles')}
-                style={styles.presetChip}
-              >
-                <Text style={styles.presetChipText}>Multi-gasto: Menú 15 y taxi 5</Text>
-              </Pressable>
-              <Pressable
-                onPress={() => handleQuickPreset('Dos lucas y media en fotocopias al contado')}
-                style={styles.presetChip}
-              >
-                <Text style={styles.presetChipText}>Jerga + efectivo: Dos lucas y media al contado</Text>
-              </Pressable>
-              <Pressable
-                onPress={() =>
-                  handleQuickPreset(
-                    'Compré una galleta de 2 soles, ah no espera son 3 soles en Don Pepe'
-                  )
-                }
-                style={styles.presetChip}
-              >
-                <Text style={styles.presetChipText}>Corrección: ah no espera son 3 en Don Pepe</Text>
-              </Pressable>
-            </View>
+            {isIncomeMode ? (
+              <View style={styles.presetsRow}>
+                <Pressable
+                  onPress={() => handleQuickPreset('Hoy recibí 500 soles de sueldo')}
+                  style={styles.presetChip}
+                >
+                  <Text style={styles.presetChipText}>Sueldo: Recibí 500 soles de sueldo</Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => handleQuickPreset('Me yapeó mi mamá 50 soles de propina')}
+                  style={styles.presetChip}
+                >
+                  <Text style={styles.presetChipText}>Propina: Me yapeó mi mamá 50 soles</Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => handleQuickPreset('Cobré 120 soles por trabajo freelance de diseño')}
+                  style={styles.presetChip}
+                >
+                  <Text style={styles.presetChipText}>Freelance: 120 soles diseño</Text>
+                </Pressable>
+                <Pressable
+                  onPress={() =>
+                    handleQuickPreset('Ayer vendí 80 soles de postres, ah no espera, 95 soles')
+                  }
+                  style={styles.presetChip}
+                >
+                  <Text style={styles.presetChipText}>Corrección: vendí 80, ah no espera 95</Text>
+                </Pressable>
+              </View>
+            ) : (
+              <View style={styles.presetsRow}>
+                <Pressable
+                  onPress={() => handleQuickPreset('15 soles en almuerzo en Tambo por yape')}
+                  style={styles.presetChip}
+                >
+                  <Text style={styles.presetChipText}>
+                    Patrón ideal: 15 soles almuerzo Tambo yape
+                  </Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => handleQuickPreset('Menú 15 soles y taxi 5 soles')}
+                  style={styles.presetChip}
+                >
+                  <Text style={styles.presetChipText}>Multi-gasto: Menú 15 y taxi 5</Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => handleQuickPreset('Dos lucas y media en fotocopias al contado')}
+                  style={styles.presetChip}
+                >
+                  <Text style={styles.presetChipText}>
+                    Jerga + efectivo: Dos lucas y media al contado
+                  </Text>
+                </Pressable>
+                <Pressable
+                  onPress={() =>
+                    handleQuickPreset(
+                      'Compré una galleta de 2 soles, ah no espera son 3 soles en Don Pepe'
+                    )
+                  }
+                  style={styles.presetChip}
+                >
+                  <Text style={styles.presetChipText}>
+                    Corrección: ah no espera son 3 en Don Pepe
+                  </Text>
+                </Pressable>
+              </View>
+            )}
           </View>
 
           {/* Botones de acción */}
@@ -272,17 +368,23 @@ export const VoiceRecordingModal: React.FC<VoiceRecordingModalProps> = ({
                 (!transcript.trim() || isOrganizing) && { opacity: 0.85 },
               ]}
               accessibilityRole="button"
-              accessibilityLabel="Organizar compras dictadas"
+              accessibilityLabel={
+                isIncomeMode ? 'Completar ingreso dictado' : 'Organizar compras dictadas'
+              }
             >
               {isOrganizing ? (
                 <>
                   <ActivityIndicator size="small" color="#0D0D0F" />
-                  <Text style={styles.finishBtnText}>Organizando gastos...</Text>
+                  <Text style={styles.finishBtnText}>
+                    {isIncomeMode ? 'Procesando ingreso...' : 'Organizando gastos...'}
+                  </Text>
                 </>
               ) : (
                 <>
                   <Icon name="Check" size={18} color="#0D0D0F" />
-                  <Text style={styles.finishBtnText}>Listo, organizar</Text>
+                  <Text style={styles.finishBtnText}>
+                    {isIncomeMode ? 'Listo, completar' : 'Listo, organizar'}
+                  </Text>
                 </>
               )}
             </Pressable>

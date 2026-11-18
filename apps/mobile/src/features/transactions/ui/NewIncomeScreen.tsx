@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -8,7 +8,6 @@ import {
   ScrollView,
   KeyboardAvoidingView,
   Platform,
-  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -17,8 +16,12 @@ import { Icon } from '@/core/ui';
 import { DEV_USER_ID } from '@/core/dev/constants';
 import { db, profile } from '@/core/db';
 import { eq } from 'drizzle-orm';
-import { Category, CategorySelector } from '@/features/categories';
+import { categoriesRepository, Category, CategorySelector } from '@/features/categories';
 import { transactionsRepository } from '../data/transactions.repository';
+import { voiceLearningRepository } from '../data/voiceLearning.repository';
+import { SpeechAlternative } from '../domain/types';
+import { formatLocalDateISO, parseVoiceIncomeFromAlternatives } from '../domain/voiceParser';
+import { VoiceRecordingModal } from './VoiceRecordingModal';
 
 const FREQUENT_SOURCES = [
   'Sueldo / Salario',
@@ -33,13 +36,19 @@ export const NewIncomeScreen: React.FC = () => {
   // Estado del formulario
   const [amountStr, setAmountStr] = useState('100.00');
   const [selectedCategory, setSelectedCategory] = useState<Category | null>(null);
+  const [categoriesList, setCategoriesList] = useState<Category[]>([]);
+  const [learnedHints, setLearnedHints] = useState<string[]>([]);
   const [source, setSource] = useState('Sueldo / Salario');
   const [note, setNote] = useState('');
+  const [entryMethod, setEntryMethod] = useState<'manual' | 'voice'>('manual');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [aiBannerText, setAiBannerText] = useState<string | null>(null);
+  const [isVoiceModalOpen, setIsVoiceModalOpen] = useState(false);
   const [selectedDateOffset, setSelectedDateOffset] = useState<0 | 1>(0); // 0 = Hoy, 1 = Ayer
+  const [customOccurredOn, setCustomOccurredOn] = useState<string | null>(null);
   const [currentBalanceCents, setCurrentBalanceCents] = useState<number>(0);
 
-  // Cargar saldo actual del perfil guardado en SQLite
+  // Cargar saldo actual, categorías de ingreso y aprendizaje adaptativo desde SQLite
   React.useEffect(() => {
     let mounted = true;
     queueMicrotask(() => {
@@ -47,6 +56,17 @@ export const NewIncomeScreen: React.FC = () => {
         const userProf = db.select().from(profile).where(eq(profile.id, DEV_USER_ID)).get();
         if (mounted && userProf) {
           setCurrentBalanceCents(userProf.initialBalanceCents);
+        }
+
+        const cats = categoriesRepository.getByUser(DEV_USER_ID, 'income');
+        if (mounted) {
+          setCategoriesList(cats);
+          setSelectedCategory((prev) => prev ?? cats[0] ?? null);
+        }
+
+        const learned = voiceLearningRepository.getAll(DEV_USER_ID);
+        if (mounted) {
+          setLearnedHints(learned.slice(0, 15).map((l) => l.phrase));
         }
       } catch (e) {
         console.error('Error al inicializar formulario de ingreso:', e);
@@ -57,12 +77,24 @@ export const NewIncomeScreen: React.FC = () => {
     };
   }, []);
 
-  // Cálculo de fecha según offset (0 = Hoy, 1 = Ayer)
+  const contextualHints = useMemo(
+    () =>
+      Array.from(
+        new Set([
+          ...FREQUENT_SOURCES,
+          ...categoriesList.map((c) => c.name),
+          ...learnedHints,
+        ])
+      ),
+    [categoriesList, learnedHints]
+  );
+
+  // Cálculo de fecha local según offset (0 = Hoy, 1 = Ayer) o fecha explícita dictada
   const targetDate = new Date();
   if (selectedDateOffset === 1) {
     targetDate.setDate(targetDate.getDate() - 1);
   }
-  const occurredOnISO = targetDate.toISOString().split('T')[0];
+  const occurredOnISO = customOccurredOn || formatLocalDateISO(targetDate);
 
   // Cálculo de montos
   const parsedAmount = parseFloat(amountStr) || 0;
@@ -73,6 +105,86 @@ export const NewIncomeScreen: React.FC = () => {
     const current = parseFloat(amountStr) || 0;
     const next = (current + extra).toFixed(2);
     setAmountStr(next);
+  };
+
+  const handleSelectDateOffset = (offset: 0 | 1) => {
+    setSelectedDateOffset(offset);
+    setCustomOccurredOn(null);
+  };
+
+  const handleProcessVoiceTranscript = (
+    transcript: string,
+    alternatives: SpeechAlternative[] = []
+  ) => {
+    try {
+      const latestCats = categoriesRepository.getByUser(DEV_USER_ID, 'income');
+      const activeCategories = latestCats.length > 0 ? latestCats : categoriesList;
+      if (latestCats.length > 0) {
+        setCategoriesList(latestCats);
+      }
+
+      const learnedMatches = voiceLearningRepository.getAll(DEV_USER_ID).map((l) => ({
+        phrase: l.phrase,
+        categoryId: l.categoryId,
+        merchantName: l.merchantName,
+        hitCount: l.hitCount,
+      }));
+      const historicalSamples = voiceLearningRepository.getHistoricalCategorySamples(
+        DEV_USER_ID,
+        'income'
+      );
+
+      const parsed = parseVoiceIncomeFromAlternatives(transcript, alternatives, {
+        userCategories: activeCategories.map((c) => ({ id: c.id, name: c.name, icon: c.icon })),
+        learnedMatches,
+        historicalSamples,
+        defaultDate: occurredOnISO,
+      });
+
+      if (!parsed) return;
+
+      if (parsed.amountCents > 0) {
+        setAmountStr((parsed.amountCents / 100).toFixed(2));
+      }
+
+      const matchedCat = parsed.categoryId
+        ? activeCategories.find((c) => c.id === parsed.categoryId) || null
+        : parsed.categoryName
+        ? activeCategories.find(
+            (c) => c.name.toLowerCase() === parsed.categoryName!.toLowerCase()
+          ) || null
+        : null;
+      setSelectedCategory(matchedCat);
+
+      if (parsed.source) {
+        setSource(parsed.source);
+      }
+      setNote('');
+      setEntryMethod('voice');
+      setErrorMsg(null);
+
+      const now = new Date();
+      const todayISO = formatLocalDateISO(now);
+      const yest = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+      const yesterdayISO = formatLocalDateISO(yest);
+      if (parsed.occurredOn === todayISO) {
+        setSelectedDateOffset(0);
+        setCustomOccurredOn(null);
+      } else if (parsed.occurredOn === yesterdayISO) {
+        setSelectedDateOffset(1);
+        setCustomOccurredOn(null);
+      } else {
+        setCustomOccurredOn(parsed.occurredOn);
+      }
+
+      setAiBannerText(
+        matchedCat
+          ? 'Dictado procesado: revisa los campos y guarda tu ingreso'
+          : 'Dictado procesado: selecciona una categoría para guardar tu ingreso'
+      );
+    } catch (e: any) {
+      setErrorMsg(e?.message || 'Error al procesar el dictado de ingreso');
+    }
   };
 
   const handleSave = () => {
@@ -95,14 +207,24 @@ export const NewIncomeScreen: React.FC = () => {
     }
 
     try {
+      const cleanSource = source.trim();
+      const cleanNote = note.trim();
+
       transactionsRepository.createIncome(DEV_USER_ID, {
         amountCents,
         occurredOn: occurredOnISO,
         categoryId: selectedCategory.id,
-        source: source.trim(),
-        note: note.trim() || undefined,
-        entryMethod: 'manual',
+        source: cleanSource,
+        note: cleanNote || undefined,
+        entryMethod,
       });
+
+      if (cleanSource.length >= 3) {
+        voiceLearningRepository.learnPhrase(DEV_USER_ID, cleanSource, selectedCategory.id);
+      }
+      if (cleanNote.length >= 3 && cleanNote.toLowerCase() !== cleanSource.toLowerCase()) {
+        voiceLearningRepository.learnPhrase(DEV_USER_ID, cleanNote, selectedCategory.id);
+      }
 
       // Retorno inmediato a la vista anterior (< 50 ms)
       router.back();
@@ -130,11 +252,12 @@ export const NewIncomeScreen: React.FC = () => {
           </Pressable>
           <Text style={styles.headerTitle}>Nuevo ingreso</Text>
           <Pressable
-            onPress={() => Alert.alert('Dictado por voz', 'RF-003 en desarrollo por Dev C')}
+            onPress={() => setIsVoiceModalOpen(true)}
             style={styles.headerButton}
-            accessibilityLabel="Voz"
+            accessibilityRole="button"
+            accessibilityLabel="Dictar ingreso por voz"
           >
-            <Icon name="Mic" size={20} color={colors.ink2} />
+            <Icon name="Mic" size={20} color={colors.secondary} />
           </Pressable>
         </View>
 
@@ -174,36 +297,49 @@ export const NewIncomeScreen: React.FC = () => {
             </View>
           </View>
 
+          {/* Banner de dictado por voz */}
+          {aiBannerText && (
+            <View style={styles.aiBanner}>
+              <View style={styles.aiBannerLeft}>
+                <Icon name="Sparkles" size={16} color={colors.secondary} />
+                <Text style={styles.aiBannerText}>{aiBannerText}</Text>
+              </View>
+              <Pressable onPress={() => setAiBannerText(null)}>
+                <Icon name="X" size={16} color={colors.ink3} />
+              </Pressable>
+            </View>
+          )}
+
           {/* 2. Fecha y Estado */}
           <View style={styles.metaRow}>
             <View style={styles.dateSelector}>
               <Pressable
-                onPress={() => setSelectedDateOffset(0)}
+                onPress={() => handleSelectDateOffset(0)}
                 style={[
                   styles.datePill,
-                  selectedDateOffset === 0 && styles.datePillActive,
+                  !customOccurredOn && selectedDateOffset === 0 && styles.datePillActive,
                 ]}
               >
                 <Text
                   style={[
                     styles.datePillText,
-                    selectedDateOffset === 0 && styles.datePillTextActive,
+                    !customOccurredOn && selectedDateOffset === 0 && styles.datePillTextActive,
                   ]}
                 >
                   Hoy
                 </Text>
               </Pressable>
               <Pressable
-                onPress={() => setSelectedDateOffset(1)}
+                onPress={() => handleSelectDateOffset(1)}
                 style={[
                   styles.datePill,
-                  selectedDateOffset === 1 && styles.datePillActive,
+                  !customOccurredOn && selectedDateOffset === 1 && styles.datePillActive,
                 ]}
               >
                 <Text
                   style={[
                     styles.datePillText,
-                    selectedDateOffset === 1 && styles.datePillTextActive,
+                    !customOccurredOn && selectedDateOffset === 1 && styles.datePillTextActive,
                   ]}
                 >
                   Ayer
@@ -330,6 +466,16 @@ export const NewIncomeScreen: React.FC = () => {
           </Pressable>
         </View>
       </KeyboardAvoidingView>
+
+      {isVoiceModalOpen && (
+        <VoiceRecordingModal
+          visible={isVoiceModalOpen}
+          mode="income"
+          contextualHints={contextualHints}
+          onClose={() => setIsVoiceModalOpen(false)}
+          onProcessTranscript={handleProcessVoiceTranscript}
+        />
+      )}
     </SafeAreaView>
   );
 };
@@ -340,6 +486,29 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bg,
   },
   keyboardView: {
+    flex: 1,
+  },
+  aiBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: spacing.sm,
+    borderRadius: radius.md,
+    backgroundColor: 'rgba(34, 197, 94, 0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(34, 197, 94, 0.3)',
+  },
+  aiBannerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    flex: 1,
+  },
+  aiBannerText: {
+    ...typography.bodySmall,
+    color: colors.ink,
+    fontSize: 12,
+    fontWeight: '600',
     flex: 1,
   },
   header: {

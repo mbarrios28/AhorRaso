@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -14,12 +14,13 @@ import * as Crypto from 'expo-crypto';
 import { colors, spacing, radius, typography, fontFamilies } from '@/core/theme';
 import { Icon } from '@/core/ui';
 import { DEV_USER_ID } from '@/core/dev/constants';
-import { db, merchants, profile } from '@/core/db';
+import { db, merchants } from '@/core/db';
 import { and, eq, isNull } from 'drizzle-orm';
 import { Category, categoriesRepository } from '@/features/categories';
 import { transactionsRepository } from '../data/transactions.repository';
 import { voiceLearningRepository } from '../data/voiceLearning.repository';
-import { parseVoiceTranscript } from '../domain/voiceParser';
+import { SpeechAlternative } from '../domain/types';
+import { formatLocalDateISO, parseVoiceExpensesFromAlternatives } from '../domain/voiceParser';
 import { ExpenseAccordionCard, ExpenseItemState } from './ExpenseAccordionCard';
 import { VoiceRecordingModal } from './VoiceRecordingModal';
 import { alertsRepository } from '@/features/alerts';
@@ -28,9 +29,10 @@ const FREQUENT_PLACES = ['Menú UNSA', 'Fotocopias', 'Combi', 'Tambo+'];
 
 export const NewExpenseScreen: React.FC = () => {
   const insets = useSafeAreaInsets();
-  // Lista de categorías y establecimientos
+  // Lista de categorías, establecimientos y vocabulario aprendido
   const [categoriesList, setCategoriesList] = useState<Category[]>([]);
   const [placesList, setPlacesList] = useState<string[]>(FREQUENT_PLACES);
+  const [learnedHints, setLearnedHints] = useState<string[]>([]);
   const [selectedDateOffset, setSelectedDateOffset] = useState<0 | 1>(0); // 0 = Hoy, 1 = Ayer
 
   // Estado del modal de voz y banner de IA
@@ -52,7 +54,7 @@ export const NewExpenseScreen: React.FC = () => {
   ]);
   const [openCardId, setOpenCardId] = useState<string | null>('card-init-1');
 
-  // Inicialización de categorías y saldo de perfil
+  // Inicialización de categorías, comercios y frases aprendidas
   useEffect(() => {
     let mounted = true;
     queueMicrotask(() => {
@@ -80,6 +82,12 @@ export const NewExpenseScreen: React.FC = () => {
         if (mounted) {
           setPlacesList(combined);
         }
+
+        // 3. Frases frecuentes de autoaprendizaje para sesgo contextual del micrófono
+        const learned = voiceLearningRepository.getAll(DEV_USER_ID);
+        if (mounted) {
+          setLearnedHints(learned.slice(0, 15).map((l) => l.phrase));
+        }
       } catch (e) {
         console.error('Error al inicializar NewExpenseScreen:', e);
       }
@@ -90,19 +98,35 @@ export const NewExpenseScreen: React.FC = () => {
     };
   }, []);
 
-  // Cálculo de fecha según offset (0 = Hoy, 1 = Ayer)
+  const contextualHints = useMemo(
+    () =>
+      Array.from(
+        new Set([
+          ...placesList,
+          ...categoriesList.map((c) => c.name),
+          ...learnedHints,
+        ])
+      ),
+    [placesList, categoriesList, learnedHints]
+  );
+
+  // Cálculo de fecha local según offset (0 = Hoy, 1 = Ayer)
   const targetDate = new Date();
   if (selectedDateOffset === 1) {
     targetDate.setDate(targetDate.getDate() - 1);
   }
-  const occurredOnISO = targetDate.toISOString().split('T')[0];
+  const occurredOnISO = formatLocalDateISO(targetDate);
+
+  const handleSelectDateOffset = (offset: 0 | 1) => {
+    setSelectedDateOffset(offset);
+    setCards((prev) => prev.map((c) => ({ ...c, occurredOn: undefined })));
+  };
 
   // Cálculo del total acumulado en todas las cards
   const totalAmount = cards.reduce((sum, c) => {
     const val = parseFloat(c.amountStr) || 0;
     return sum + val;
   }, 0);
-  const totalCents = Math.round(totalAmount * 100);
 
   // Toggle de acordeón para una card
   const handleToggleCard = (cardId: string) => {
@@ -115,7 +139,7 @@ export const NewExpenseScreen: React.FC = () => {
     const newCard: ExpenseItemState = {
       id: newId,
       amountStr: '',
-      selectedCategory: null,
+      selectedCategory: categoriesList[0] || null,
       place: '',
       paymentMethod: 'digital',
       note: '',
@@ -142,61 +166,101 @@ export const NewExpenseScreen: React.FC = () => {
     );
   };
 
-  // Procesamiento del dictado por voz (HU-10)
-  const handleProcessVoiceTranscript = (transcript: string) => {
+  // Procesamiento del dictado por voz (HU-10) 100% On-Device
+  const handleProcessVoiceTranscript = (
+    transcript: string,
+    alternatives: SpeechAlternative[] = []
+  ) => {
     try {
-      // 1. Obtener aprendizajes adaptativos del usuario desde SQLite
+      // Refrescar categorías activas por si el usuario creó una nueva en la misma sesión
+      const latestCats = categoriesRepository.getByUser(DEV_USER_ID, 'expense');
+      const activeCategories = latestCats.length > 0 ? latestCats : categoriesList;
+      if (latestCats.length > 0) {
+        setCategoriesList(latestCats);
+      }
+
+      // 1. Obtener aprendizajes adaptativos e historial real del usuario desde SQLite
       const learnedMatches = voiceLearningRepository.getAll(DEV_USER_ID).map((l) => ({
         phrase: l.phrase,
         categoryId: l.categoryId,
         merchantName: l.merchantName,
         hitCount: l.hitCount,
       }));
+      const historicalSamples = voiceLearningRepository.getHistoricalCategorySamples(
+        DEV_USER_ID,
+        'expense'
+      );
 
-      // 2. Procesar transcripción con el parser NLP no rígido
-      const parsedExpenses = parseVoiceTranscript(transcript, {
-        userCategories: categoriesList.map((c) => ({ id: c.id, name: c.name, icon: c.icon })),
+      // 2. Procesar transcripción e hipótesis N-best con el motor estadístico + gramática formal
+      const parsedExpenses = parseVoiceExpensesFromAlternatives(transcript, alternatives, {
+        userCategories: activeCategories.map((c) => ({ id: c.id, name: c.name, icon: c.icon })),
         learnedMatches,
         knownPlaces: placesList,
+        historicalSamples,
         defaultDate: occurredOnISO,
       });
 
       if (parsedExpenses.length === 0) return;
 
-      // Si el dictado detectó que el gasto fue de ayer, ajustar el selector de fecha automáticamente
-      const todayISO = new Date().toISOString().split('T')[0];
-      if (parsedExpenses[0]?.occurredOn && parsedExpenses[0].occurredOn !== todayISO) {
+      // Sincronizar selector de fecha Hoy/Ayer si todas las compras dictadas coinciden con Hoy o Ayer
+      const now = new Date();
+      const todayISO = formatLocalDateISO(now);
+      const yest = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+      const yesterdayISO = formatLocalDateISO(yest);
+
+      const allYesterday = parsedExpenses.every((pe) => pe.occurredOn === yesterdayISO);
+      const allToday = parsedExpenses.every((pe) => pe.occurredOn === todayISO);
+      let nextSessionDate = occurredOnISO;
+      if (allYesterday) {
         setSelectedDateOffset(1);
+        nextSessionDate = yesterdayISO;
+      } else if (allToday) {
+        setSelectedDateOffset(0);
+        nextSessionDate = todayISO;
       }
 
-      // 3. Convertir resultados a ExpenseItemState
+      // 3. Convertir resultados a ExpenseItemState (sin llenar nota ni forzar categoría si no encaja)
       const newCards: ExpenseItemState[] = parsedExpenses.map((pe) => {
-        const cat =
-          categoriesList.find((c) => c.id === pe.categoryId) ||
-          categoriesList.find(
-            (c) => c.name.toLowerCase() === (pe.categoryName || '').toLowerCase()
-          ) ||
-          categoriesList[0] ||
-          null;
+        const cat = pe.categoryId
+          ? activeCategories.find((c) => c.id === pe.categoryId) || null
+          : pe.categoryName
+          ? activeCategories.find(
+              (c) => c.name.toLowerCase() === pe.categoryName!.toLowerCase()
+            ) || null
+          : null;
 
         return {
           id: Crypto.randomUUID(),
-          amountStr: (pe.amountCents / 100).toFixed(2),
+          amountStr: pe.amountCents > 0 ? (pe.amountCents / 100).toFixed(2) : '',
           selectedCategory: cat,
           place: pe.merchantName || '',
           paymentMethod: pe.paymentMethod,
-          note: pe.note || '',
+          note: '',
+          occurredOn: pe.occurredOn !== nextSessionDate ? pe.occurredOn : undefined,
           entryMethod: 'voice',
         };
       });
 
-      // 4. Reemplazar o poblar la lista
-      setCards(newCards);
-      setOpenCardId(newCards[0].id);
+      // 4. Conservar cards ya completadas manualmente y reemplazar solo si únicamente queda la ficha inicial en blanco
+      setCards((prev) => {
+        const isOnlyEmptyInit =
+          prev.length === 1 &&
+          !prev[0].amountStr.trim() &&
+          !prev[0].place.trim() &&
+          !prev[0].note.trim();
+        return isOnlyEmptyInit ? newCards : [...prev, ...newCards];
+      });
+      const firstMissingCategory = newCards.find((c) => !c.selectedCategory);
+      const missingCount = newCards.filter((c) => !c.selectedCategory).length;
+      setOpenCardId(firstMissingCategory ? firstMissingCategory.id : newCards[0].id);
       setAiBannerText(
-        `Dictado procesado: ${newCards.length} ${
-          newCards.length === 1 ? 'compra organizada' : 'compras organizadas'
-        }`
+        missingCount > 0
+          ? `Dictado procesado: ${newCards.length} ${
+              newCards.length === 1 ? 'compra' : 'compras'
+            } (${missingCount} sin categoría, selecciónala para guardar)`
+          : `Dictado procesado: ${newCards.length} ${
+              newCards.length === 1 ? 'compra organizada' : 'compras organizadas'
+            }`
       );
     } catch (e: any) {
       setErrorMsg(e?.message || 'Error al procesar el dictado de voz');
@@ -232,29 +296,39 @@ export const NewExpenseScreen: React.FC = () => {
     }
 
     try {
-      // Guardar cada gasto en la base de datos local y registrar autoaprendizaje
+      // Guardar cada gasto en la base de datos local y reforzar autoaprendizaje adaptativo
       for (const card of cards) {
         const parsed = parseFloat(card.amountStr) || 0;
         const cents = Math.round(parsed * 100);
+        const cardDate = card.occurredOn || occurredOnISO;
+        const cleanPlace = card.place.trim();
+        const cleanNote = card.note.trim();
 
         transactionsRepository.createExpense(DEV_USER_ID, {
           amountCents: cents,
-          occurredOn: occurredOnISO,
+          occurredOn: cardDate,
           categoryId: card.selectedCategory!.id,
-          merchantName: card.place.trim() || undefined,
+          merchantName: cleanPlace || undefined,
           paymentMethod: card.paymentMethod,
-          note: card.note.trim() || undefined,
+          note: cleanNote || undefined,
           entryMethod: card.entryMethod,
         });
 
-        // Autoaprendizaje adaptativo: registrar el patrón frase/comercio -> categoría
-        const learnCandidate = card.place.trim() || card.note.trim();
-        if (learnCandidate.length >= 3) {
+        // Autoaprendizaje adaptativo: aprender tanto comercio como producto/nota no genérica
+        if (cleanPlace.length >= 3) {
           voiceLearningRepository.learnPhrase(
             DEV_USER_ID,
-            learnCandidate,
+            cleanPlace,
             card.selectedCategory!.id,
-            card.place.trim() || undefined
+            cleanPlace
+          );
+        }
+        if (cleanNote.length >= 3 && cleanNote.toLowerCase() !== cleanPlace.toLowerCase()) {
+          voiceLearningRepository.learnPhrase(
+            DEV_USER_ID,
+            cleanNote,
+            card.selectedCategory!.id,
+            cleanPlace || undefined
           );
         }
       }
@@ -317,7 +391,7 @@ export const NewExpenseScreen: React.FC = () => {
           <View style={styles.metaRow}>
             <View style={styles.dateSelector}>
               <Pressable
-                onPress={() => setSelectedDateOffset(0)}
+                onPress={() => handleSelectDateOffset(0)}
                 style={[
                   styles.datePill,
                   selectedDateOffset === 0 && styles.datePillActive,
@@ -333,7 +407,7 @@ export const NewExpenseScreen: React.FC = () => {
                 </Text>
               </Pressable>
               <Pressable
-                onPress={() => setSelectedDateOffset(1)}
+                onPress={() => handleSelectDateOffset(1)}
                 style={[
                   styles.datePill,
                   selectedDateOffset === 1 && styles.datePillActive,
@@ -397,6 +471,7 @@ export const NewExpenseScreen: React.FC = () => {
                 index={idx}
                 isOpen={openCardId === card.id}
                 canDelete={cards.length > 1}
+                sessionDate={occurredOnISO}
                 onToggle={() => handleToggleCard(card.id)}
                 onDelete={() => handleDeleteCard(card.id)}
                 onUpdate={(updated) => handleUpdateCard(card.id, updated)}
@@ -452,6 +527,8 @@ export const NewExpenseScreen: React.FC = () => {
       {isVoiceModalOpen && (
         <VoiceRecordingModal
           visible={isVoiceModalOpen}
+          mode="expense"
+          contextualHints={contextualHints}
           onClose={() => setIsVoiceModalOpen(false)}
           onProcessTranscript={handleProcessVoiceTranscript}
         />
