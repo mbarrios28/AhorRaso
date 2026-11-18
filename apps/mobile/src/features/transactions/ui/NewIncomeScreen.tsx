@@ -359,8 +359,12 @@ export const NewIncomeScreen: React.FC = () => {
             <Text style={styles.sectionLabel}>CATEGORÍA DE INGRESO</Text>
             <CategorySelector
               selectedId={selectedCategory?.id || null}
-              onSelect={(cat) => setSelectedCategory(cat)}
+              onSelect={(cat) => {
+                setErrorMsg(null);
+                setSelectedCategory(cat);
+              }}
               type="income"
+              autoSelectFirst={false}
             />
           </View>
 

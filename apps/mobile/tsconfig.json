@@ -4,7 +4,6 @@
     "strict": true,
     "ignoreDeprecations": "6.0",
     "baseUrl": ".",
-    "ignoreDeprecations": "6.0",
     "types": [
       "jest",
       "node"

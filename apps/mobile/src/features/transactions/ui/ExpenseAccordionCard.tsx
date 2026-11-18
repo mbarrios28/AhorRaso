@@ -55,19 +55,29 @@ export const ExpenseAccordionCard: React.FC<ExpenseAccordionCardProps> = ({
     onUpdate({ amountStr: next });
   };
 
+  const hasCategory = Boolean(card.selectedCategory);
   const categoryName = card.selectedCategory?.name || 'Sin categoría';
   const categoryIcon = card.selectedCategory?.icon ?? 'Tag';
   const categoryColor = card.selectedCategory?.color;
-  const cardTitle = card.place.trim() || (card.selectedCategory?.name ?? `Gasto ${index + 1}`);
-  const paymentLabel = card.paymentMethod === 'digital' ? 'Digital' : 'Efectivo';
+  const trimmedPlace = card.place.trim();
+  const cardTitle = trimmedPlace || (card.selectedCategory?.name ?? `Gasto ${index + 1}`);
+  const showCategoryBadge = !hasCategory || Boolean(trimmedPlace);
+  const paymentLabel = card.paymentMethod === 'digital' ? 'Yape / Plin' : 'Efectivo';
   const hasCustomDate = Boolean(card.occurredOn && sessionDate && card.occurredOn !== sessionDate);
-  const datePart = hasCustomDate ? ` · ${card.occurredOn}` : '';
-  const subtitle = card.note.trim()
-    ? `${paymentLabel}${datePart} · ${card.note}`
-    : `${paymentLabel}${datePart} · Toca para editar`;
+  const metaParts = [
+    paymentLabel,
+    hasCustomDate ? card.occurredOn : null,
+    card.note.trim() || null,
+  ].filter(Boolean);
+  const subtitle = metaParts.join(' · ');
 
   return (
-    <View style={styles.cardContainer}>
+    <View
+      style={[
+        styles.cardContainer,
+        !hasCategory && styles.cardContainerNeedsCategory,
+      ]}
+    >
       {/* 1. Header de la Card (Clic para plegar/desplegar) */}
       <Pressable
         onPress={onToggle}
@@ -76,28 +86,52 @@ export const ExpenseAccordionCard: React.FC<ExpenseAccordionCardProps> = ({
         accessibilityLabel={`Gasto ${index + 1}: ${cardTitle}, S/ ${parsedAmount.toFixed(2)}`}
       >
         <View style={styles.headerLeft}>
-          <View style={styles.iconBox}>
-            <Icon name={categoryIcon} size={20} color={categoryColor || colors.tertiary} />
+          <View
+            style={[
+              styles.iconBox,
+              !hasCategory && styles.iconBoxWarning,
+            ]}
+          >
+            <Icon
+              name={categoryIcon}
+              size={20}
+              color={hasCategory ? categoryColor || colors.tertiary : colors.warning}
+            />
           </View>
           <View style={styles.headerInfo}>
-            <View style={styles.titleRow}>
-              <Text style={styles.cardTitle} numberOfLines={1}>
-                {cardTitle}
-              </Text>
-              <View style={styles.categoryBadge}>
-                <Text style={styles.categoryBadgeText} numberOfLines={1}>
-                  {categoryName}
-                </Text>
-              </View>
-            </View>
-            <Text style={styles.subtitle} numberOfLines={1}>
-              {subtitle}
+            <Text style={styles.cardTitle} numberOfLines={1}>
+              {cardTitle}
             </Text>
+            <View style={styles.metaRow}>
+              {showCategoryBadge && (
+                <View
+                  style={[
+                    styles.categoryBadge,
+                    !hasCategory && styles.categoryBadgeWarning,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.categoryBadgeText,
+                      !hasCategory && styles.categoryBadgeTextWarning,
+                    ]}
+                    numberOfLines={1}
+                  >
+                    {categoryName}
+                  </Text>
+                </View>
+              )}
+              <Text style={styles.subtitle} numberOfLines={1}>
+                {subtitle}
+              </Text>
+            </View>
           </View>
         </View>
 
         <View style={styles.headerRight}>
-          <Text style={[styles.amountDisplay, { color: colors.tertiary }]}>-S/ {parsedAmount.toFixed(2)}</Text>
+          <Text style={styles.amountDisplay} numberOfLines={1}>
+            -S/ {parsedAmount.toFixed(2)}
+          </Text>
           {canDelete && (
             <Pressable
               onPress={(e) => {
@@ -105,9 +139,10 @@ export const ExpenseAccordionCard: React.FC<ExpenseAccordionCardProps> = ({
                 onDelete();
               }}
               style={styles.deleteBtn}
+              hitSlop={6}
               accessibilityLabel={`Eliminar gasto ${index + 1}`}
             >
-              <Icon name="Trash2" size={17} color={colors.ink3} />
+              <Icon name="Trash2" size={16} color={colors.ink3} />
             </Pressable>
           )}
           <View style={styles.chevronBox}>
@@ -124,45 +159,55 @@ export const ExpenseAccordionCard: React.FC<ExpenseAccordionCardProps> = ({
       {isOpen && (
         <View style={styles.cardBody}>
           {/* Monto Hero */}
-          <View style={styles.amountHeroContainer}>
+          <View style={styles.formSection}>
             <Text style={styles.fieldLabel}>MONTO</Text>
-            <View style={styles.amountInputRow}>
-              <Text style={styles.currencyPrefix}>S/</Text>
-              <TextInput
-                value={card.amountStr}
-                onChangeText={(val) => {
-                  const sanitized = val.replace(/[^0-9.]/g, '');
-                  onUpdate({ amountStr: sanitized });
-                }}
-                placeholder="0.00"
-                placeholderTextColor="#71717A"
-                keyboardType="decimal-pad"
-                style={styles.amountInput}
-                selectTextOnFocus
-              />
-            </View>
-            {/* Atajos de incremento rápido */}
-            <View style={styles.quickAddRow}>
-              {[5, 10, 20].map((add) => (
-                <Pressable
-                  key={add}
-                  onPress={() => handleAddAmount(add)}
-                  style={styles.quickChip}
-                >
-                  <Text style={styles.quickChipText}>+ S/ {add}</Text>
-                </Pressable>
-              ))}
+            <View style={styles.amountHeroContainer}>
+              <View style={styles.amountInputRow}>
+                <Text style={styles.currencyPrefix}>S/</Text>
+                <TextInput
+                  value={card.amountStr}
+                  onChangeText={(val) => {
+                    const sanitized = val.replace(/[^0-9.]/g, '');
+                    onUpdate({ amountStr: sanitized });
+                  }}
+                  placeholder="0.00"
+                  placeholderTextColor={colors.ink3}
+                  keyboardType="decimal-pad"
+                  style={styles.amountInput}
+                  selectTextOnFocus
+                />
+              </View>
+              {/* Atajos de incremento rápido */}
+              <View style={styles.quickAddRow}>
+                {[5, 10, 20].map((add) => (
+                  <Pressable
+                    key={add}
+                    onPress={() => handleAddAmount(add)}
+                    style={styles.quickChip}
+                  >
+                    <Text style={styles.quickChipText}>+ S/ {add}</Text>
+                  </Pressable>
+                ))}
+              </View>
             </View>
           </View>
 
           {/* Categoría Selector (incluye + Nueva categoría y botón Gestionar de main) */}
           <View style={styles.formSection}>
-            <Text style={styles.fieldLabel}>CATEGORÍA</Text>
+            <View style={styles.sectionLabelRow}>
+              <Text style={styles.fieldLabel}>CATEGORÍA</Text>
+              {!hasCategory && (
+                <View style={styles.requiredBadge}>
+                  <Text style={styles.requiredBadgeText}>Requerida</Text>
+                </View>
+              )}
+            </View>
             <CategorySelector
               selectedId={card.selectedCategory?.id || null}
               onSelect={(cat) => onUpdate({ selectedCategory: cat })}
               type="expense"
               showManageLink={true}
+              autoSelectFirst={false}
             />
           </View>
 
@@ -197,6 +242,7 @@ export const ExpenseAccordionCard: React.FC<ExpenseAccordionCardProps> = ({
                         styles.placeChipText,
                         card.place === item && styles.placeChipTextSelected,
                       ]}
+                      numberOfLines={1}
                     >
                       {item}
                     </Text>
@@ -227,6 +273,7 @@ export const ExpenseAccordionCard: React.FC<ExpenseAccordionCardProps> = ({
                     styles.paymentText,
                     card.paymentMethod === 'cash' && styles.paymentTextActive,
                   ]}
+                  numberOfLines={1}
                 >
                   Efectivo
                 </Text>
@@ -249,8 +296,9 @@ export const ExpenseAccordionCard: React.FC<ExpenseAccordionCardProps> = ({
                     styles.paymentText,
                     card.paymentMethod === 'digital' && styles.paymentTextActive,
                   ]}
+                  numberOfLines={1}
                 >
-                  Digital (Yape / Plin)
+                  Yape / Plin
                 </Text>
               </Pressable>
             </View>
@@ -258,13 +306,13 @@ export const ExpenseAccordionCard: React.FC<ExpenseAccordionCardProps> = ({
 
           {/* Nota */}
           <View style={styles.formSection}>
-            <Text style={styles.fieldLabel}>NOTA O DETALLE</Text>
+            <Text style={styles.fieldLabel}>NOTA O DETALLE (OPCIONAL)</Text>
             <View style={styles.inputContainer}>
               <Icon name="FileText" size={17} color={colors.ink3} />
               <TextInput
                 value={card.note}
                 onChangeText={(val) => onUpdate({ note: val })}
-                placeholder="Almuerzo facultad, recarga..."
+                placeholder="Añade una nota si deseas..."
                 placeholderTextColor={colors.ink3}
                 style={styles.textInput}
                 maxLength={160}
@@ -285,89 +333,105 @@ export const ExpenseAccordionCard: React.FC<ExpenseAccordionCardProps> = ({
 
 const styles = StyleSheet.create({
   cardContainer: {
-    borderRadius: 20,
-    backgroundColor: '#18181B',
+    borderRadius: radius.xl,
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: '#2A2A2F',
+    borderColor: colors.line,
     overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.15,
-    shadowRadius: 6,
-    elevation: 3,
+  },
+  cardContainerNeedsCategory: {
+    borderColor: 'rgba(245, 158, 11, 0.45)',
   },
   cardHeader: {
-    padding: spacing.base,
+    paddingHorizontal: spacing.base,
+    paddingVertical: spacing.md,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: '#18181B',
+    gap: spacing.sm,
+    backgroundColor: colors.surface,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(42, 42, 47, 0.4)',
+    borderBottomColor: 'rgba(42, 42, 47, 0.45)',
   },
   headerLeft: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.sm,
+    gap: spacing.md,
     flex: 1,
-    marginRight: spacing.sm,
+    minWidth: 0,
   },
   iconBox: {
     width: 40,
     height: 40,
-    borderRadius: 12,
-    backgroundColor: '#26262B',
+    borderRadius: radius.md,
+    backgroundColor: colors.surface3,
     borderWidth: 1,
-    borderColor: '#323238',
+    borderColor: colors.line,
     alignItems: 'center',
     justifyContent: 'center',
+    flexShrink: 0,
+  },
+  iconBoxWarning: {
+    backgroundColor: 'rgba(245, 158, 11, 0.12)',
+    borderColor: 'rgba(245, 158, 11, 0.35)',
   },
   headerInfo: {
     flex: 1,
-  },
-  titleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
+    minWidth: 0,
+    gap: 4,
   },
   cardTitle: {
     ...typography.titleSmall,
     color: colors.ink,
-    fontSize: 14,
+    fontSize: 14.5,
     fontWeight: '700',
-    maxWidth: '65%',
+  },
+  metaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    minWidth: 0,
   },
   categoryBadge: {
     paddingHorizontal: 6,
-    paddingVertical: 1,
-    borderRadius: 4,
-    backgroundColor: 'rgba(223, 108, 107, 0.15)',
+    paddingVertical: 2,
+    borderRadius: radius.xs,
+    backgroundColor: 'rgba(223, 108, 107, 0.14)',
+    flexShrink: 1,
+    maxWidth: '58%',
+  },
+  categoryBadgeWarning: {
+    backgroundColor: 'rgba(245, 158, 11, 0.16)',
   },
   categoryBadgeText: {
     fontFamily: fontFamilies.monoMedium,
     fontSize: 10,
     color: colors.tertiary,
   },
+  categoryBadgeTextWarning: {
+    color: colors.warning,
+  },
   subtitle: {
     ...typography.bodySmall,
     color: colors.ink3,
     fontSize: 11.5,
-    marginTop: 2,
+    flexShrink: 1,
   },
   headerRight: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.xs,
+    gap: 4,
+    flexShrink: 0,
   },
   amountDisplay: {
     fontFamily: fontFamilies.monoBold,
-    fontSize: 16,
-    color: colors.ink,
-    marginRight: 4,
+    fontSize: 15,
+    color: colors.tertiary,
+    marginRight: 2,
   },
   deleteBtn: {
-    width: 28,
-    height: 28,
+    width: 30,
+    height: 30,
     borderRadius: radius.full,
     alignItems: 'center',
     justifyContent: 'center',
@@ -381,30 +445,50 @@ const styles = StyleSheet.create({
   cardBody: {
     padding: spacing.base,
     gap: spacing.base,
-    backgroundColor: '#141417',
+    backgroundColor: colors.bg,
   },
   amountHeroContainer: {
     alignItems: 'center',
     justifyContent: 'center',
-    padding: spacing.base,
-    borderRadius: 14,
-    backgroundColor: '#18181B',
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.base,
+    borderRadius: radius.md,
+    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: 'rgba(42, 42, 47, 0.5)',
+    borderColor: colors.line,
+  },
+  sectionLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 4,
   },
   fieldLabel: {
     fontFamily: fontFamilies.monoMedium,
-    fontSize: 10,
+    fontSize: 10.5,
     color: colors.ink3,
-    letterSpacing: 1.2,
-    marginBottom: spacing.xxs,
+    letterSpacing: 1,
+    marginBottom: 4,
+  },
+  requiredBadge: {
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: radius.full,
+    backgroundColor: 'rgba(245, 158, 11, 0.16)',
+    borderWidth: 1,
+    borderColor: 'rgba(245, 158, 11, 0.35)',
+  },
+  requiredBadgeText: {
+    fontFamily: fontFamilies.monoMedium,
+    fontSize: 10,
+    color: colors.warning,
   },
   amountInputRow: {
     flexDirection: 'row',
     alignItems: 'baseline',
     gap: spacing.xs,
     justifyContent: 'center',
-    marginBottom: spacing.xs,
+    marginBottom: spacing.sm,
   },
   currencyPrefix: {
     fontFamily: fontFamilies.monoMedium,
@@ -427,9 +511,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.sm,
     paddingVertical: 5,
     borderRadius: radius.sm,
-    backgroundColor: '#1F1F23',
+    backgroundColor: colors.surface2,
     borderWidth: 1,
-    borderColor: '#2A2A2F',
+    borderColor: colors.line,
   },
   quickChipText: {
     fontFamily: fontFamilies.mono,
@@ -437,50 +521,49 @@ const styles = StyleSheet.create({
     color: colors.ink2,
   },
   formSection: {
-    gap: spacing.xxs,
+    gap: 2,
   },
-
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
-    backgroundColor: '#18181B',
-    borderColor: 'rgba(42, 42, 47, 0.5)',
+    backgroundColor: colors.surface,
+    borderColor: colors.line,
     borderWidth: 1,
-    borderRadius: 10,
-    paddingHorizontal: spacing.base,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
     height: 44,
   },
   textInput: {
     flex: 1,
     color: colors.ink,
     fontFamily: typography.bodyMedium.fontFamily,
-    fontSize: 13,
+    fontSize: 13.5,
     padding: 0,
   },
   placesRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: spacing.xs,
-    marginTop: spacing.xxs,
+    marginTop: spacing.xs,
   },
   placeChip: {
     paddingHorizontal: spacing.sm,
-    height: 26,
+    height: 28,
     borderRadius: radius.full,
-    backgroundColor: '#18181B',
+    backgroundColor: colors.surface,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: '#2A2A2F',
+    borderColor: colors.line,
   },
   placeChipSelected: {
-    backgroundColor: '#26262B',
+    backgroundColor: colors.surface3,
     borderColor: colors.primary,
   },
   placeChipText: {
     ...typography.bodySmall,
-    fontSize: 10.5,
+    fontSize: 11,
     color: colors.ink3,
   },
   placeChipTextSelected: {
@@ -489,29 +572,30 @@ const styles = StyleSheet.create({
   },
   paymentControl: {
     flexDirection: 'row',
-    backgroundColor: '#18181B',
-    borderRadius: 10,
-    padding: 3,
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    padding: 4,
     gap: 4,
     borderWidth: 1,
-    borderColor: 'rgba(42, 42, 47, 0.4)',
+    borderColor: colors.line,
   },
   paymentTab: {
     flex: 1,
-    height: 36,
-    borderRadius: 8,
+    height: 38,
+    borderRadius: radius.sm,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: spacing.xs,
+    paddingHorizontal: spacing.xs,
   },
   paymentTabActive: {
-    backgroundColor: '#26262B',
+    backgroundColor: colors.surface3,
   },
   paymentText: {
     ...typography.bodySmall,
     color: colors.ink3,
-    fontSize: 12,
+    fontSize: 12.5,
   },
   paymentTextActive: {
     color: colors.ink,
@@ -520,8 +604,10 @@ const styles = StyleSheet.create({
   foldCardBtn: {
     width: '100%',
     paddingVertical: spacing.sm,
-    borderRadius: 10,
-    backgroundColor: '#1F1F23',
+    borderRadius: radius.md,
+    backgroundColor: colors.surface2,
+    borderWidth: 1,
+    borderColor: colors.line,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',

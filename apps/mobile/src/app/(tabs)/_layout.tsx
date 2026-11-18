@@ -1,17 +1,29 @@
 import React from 'react';
 import { View, StyleSheet, Pressable, Platform } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Tabs, router } from 'expo-router';
 import { colors, fontFamilies } from '@/core/theme';
 import { Icon } from '@/core/ui';
 
 export default function TabsLayout() {
+  const insets = useSafeAreaInsets();
+  const bottomPadding = Platform.OS === 'ios' ? Math.max(insets.bottom, 20) : Math.max(insets.bottom, 10);
+  const tabBarHeight = 58 + bottomPadding;
+
   return (
     <Tabs
       screenOptions={{
         headerShown: false,
         tabBarActiveTintColor: colors.primary,
         tabBarInactiveTintColor: colors.ink3,
-        tabBarStyle: styles.tabBar,
+        tabBarStyle: [
+          styles.tabBar,
+          {
+            height: tabBarHeight,
+            paddingBottom: bottomPadding,
+          },
+        ],
+        tabBarItemStyle: styles.tabBarItem,
         tabBarLabelStyle: styles.tabBarLabel,
       }}
     >
@@ -21,7 +33,7 @@ export default function TabsLayout() {
         options={{
           title: 'Inicio',
           tabBarIcon: ({ color, size }) => (
-            <Icon name="LayoutDashboard" size={size || 22} color={color} />
+            <Icon name="LayoutDashboard" size={size || 21} color={color} />
           ),
         }}
       />
@@ -32,27 +44,30 @@ export default function TabsLayout() {
         options={{
           title: 'Historial',
           tabBarIcon: ({ color, size }) => (
-            <Icon name="ReceiptText" size={size || 22} color={color} />
+            <Icon name="ReceiptText" size={size || 21} color={color} />
           ),
         }}
       />
 
-      {/* 3. Botón Central de Acción (+) */}
+      {/* 3. Botón Central de Acción (+) — perfectamente centrado entre 2 tabs izq. y 2 der. */}
       <Tabs.Screen
         name="new-action"
         options={{
           title: '',
           tabBarLabel: () => null,
-          tabBarButton: ({ ref, ...props }) => (
+          tabBarButton: ({ accessibilityState }) => (
             <Pressable
-              {...props}
+              accessibilityState={accessibilityState}
               onPress={() => router.push('/new-expense')}
-              style={[props.style, styles.centralButtonContainer]}
+              style={({ pressed }) => [
+                styles.centralButtonSlot,
+                pressed && styles.centralButtonPressed,
+              ]}
               accessibilityLabel="Registrar nuevo gasto"
               accessibilityRole="button"
             >
               <View style={styles.centralButton}>
-                <Icon name="Plus" size={24} color="#0D0D0F" strokeWidth={2.8} />
+                <Icon name="Plus" size={24} color={colors.bg} strokeWidth={2.8} />
               </View>
             </Pressable>
           ),
@@ -69,9 +84,9 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="budgets"
         options={{
-          title: 'Presupuestos',
+          title: 'Presup.',
           tabBarIcon: ({ color, size }) => (
-            <Icon name="PieChart" size={size || 22} color={color} />
+            <Icon name="PieChart" size={size || 21} color={color} />
           ),
         }}
       />
@@ -82,19 +97,17 @@ export default function TabsLayout() {
         options={{
           title: 'Metas',
           tabBarIcon: ({ color, size }) => (
-            <Icon name="Target" size={size || 22} color={color} />
+            <Icon name="Target" size={size || 21} color={color} />
           ),
         }}
       />
 
-      {/* 6. Perfil y Ajustes */}
+      {/* Perfil y Ajustes — accesible desde el botón de perfil en el encabezado de Inicio */}
       <Tabs.Screen
         name="profile"
         options={{
+          href: null,
           title: 'Perfil',
-          tabBarIcon: ({ color, size }) => (
-            <Icon name="User" size={size || 22} color={color} />
-          ),
         }}
       />
     </Tabs>
@@ -106,29 +119,38 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     borderTopColor: colors.line,
     borderTopWidth: 1,
-    height: Platform.OS === 'ios' ? 88 : 64,
-    paddingBottom: Platform.OS === 'ios' ? 28 : 8,
     paddingTop: 8,
+    paddingHorizontal: 4,
     elevation: 0,
+  },
+  tabBarItem: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   tabBarLabel: {
     fontFamily: fontFamilies.bodyMedium,
     fontSize: 11,
     marginTop: 2,
   },
-  centralButtonContainer: {
-    top: -12,
-    justifyContent: 'center',
+  centralButtonSlot: {
+    flex: 1,
     alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: -22,
+  },
+  centralButtonPressed: {
+    opacity: 0.88,
+    transform: [{ scale: 0.95 }],
   },
   centralButton: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: 52,
+    height: 52,
+    borderRadius: 26,
     backgroundColor: colors.primary,
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 2.5,
+    borderWidth: 3,
     borderColor: colors.bg,
   },
 });

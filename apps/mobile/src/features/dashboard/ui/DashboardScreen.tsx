@@ -56,14 +56,24 @@ export function DashboardScreen() {
       <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
         {/* 1. Header Superior */}
         <View style={styles.header}>
-          <View>
-            <Text style={styles.greeting}>Hola, {userProfile?.displayName || 'Estudiante UNSA'}</Text>
+          <View style={styles.headerTextGroup}>
+            <Text style={styles.greeting} numberOfLines={1}>
+              Hola, {userProfile?.displayName || 'Estudiante UNSA'}
+            </Text>
             <Text style={styles.campus}>UNSA · Arequipa</Text>
           </View>
-          <View style={styles.headerAction}>
+          <Pressable
+            onPress={() => router.push('/profile')}
+            style={({ pressed }) => [
+              styles.profileButton,
+              pressed && styles.profileButtonPressed,
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel="Abrir perfil y ajustes"
+          >
+            <Icon name="User" size={18} color={colors.ink} />
             <View style={styles.statusDot} />
-            <Text style={styles.statusText}>Offline-First</Text>
-          </View>
+          </Pressable>
         </View>
 
         {/* 2. Card Principal: Saldo Disponible */}
@@ -112,7 +122,7 @@ export function DashboardScreen() {
               </View>
               <View style={styles.ctaHalfContent}>
                 <Text style={styles.ctaHalfTitle}>Nuevo ingreso</Text>
-                <Text style={styles.ctaHalfSubtitle}>Registrar entrada (RF-001)</Text>
+                <Text style={styles.ctaHalfSubtitle}>Registrar entrada</Text>
               </View>
             </Pressable>
 
@@ -145,7 +155,7 @@ export function DashboardScreen() {
               </View>
               <View style={styles.ctaHalfContent}>
                 <Text style={styles.ctaHalfTitle}>Nuevo gasto</Text>
-                <Text style={styles.ctaHalfSubtitle}>Punto de venta (RF-002)</Text>
+                <Text style={styles.ctaHalfSubtitle}>Registrar compra</Text>
               </View>
             </Pressable>
 
@@ -367,8 +377,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    gap: spacing.md,
     paddingTop: spacing.xs,
     marginBottom: spacing.xxs,
+  },
+  headerTextGroup: {
+    flex: 1,
   },
   greeting: {
     ...typography.titleMedium,
@@ -378,27 +392,30 @@ const styles = StyleSheet.create({
     ...typography.bodySmall,
     color: colors.ink3,
   },
-  headerAction: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
+  profileButton: {
+    width: 42,
+    height: 42,
+    borderRadius: radius.full,
     backgroundColor: colors.surface,
     borderColor: colors.line,
     borderWidth: 1,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
-    borderRadius: radius.full,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  profileButtonPressed: {
+    backgroundColor: colors.surface2,
+    transform: [{ scale: 0.96 }],
   },
   statusDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    width: 7,
+    height: 7,
+    borderRadius: 4,
     backgroundColor: colors.secondary,
-  },
-  statusText: {
-    ...typography.monoSmall,
-    fontSize: 10,
-    color: colors.ink2,
+    borderWidth: 1.5,
+    borderColor: colors.surface,
   },
   balanceCard: {
     backgroundColor: colors.surface,

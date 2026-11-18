@@ -15,6 +15,8 @@ export interface CategorySelectorProps {
   userId?: string;
   /** Muestra la entrada a la pantalla de administración (RF-005). */
   showManageLink?: boolean;
+  /** Si es false, respeta selectedId=null sin auto-seleccionar la primera categoría. */
+  autoSelectFirst?: boolean;
 }
 
 export const CategorySelector: React.FC<CategorySelectorProps> = ({
@@ -23,6 +25,7 @@ export const CategorySelector: React.FC<CategorySelectorProps> = ({
   type = 'expense',
   userId = DEV_USER_ID,
   showManageLink = true,
+  autoSelectFirst = true,
 }) => {
   const [categoriesList, setCategoriesList] = useState<Category[]>([]);
   const [modalVisible, setModalVisible] = useState(false);
@@ -44,17 +47,18 @@ export const CategorySelector: React.FC<CategorySelectorProps> = ({
       setCategoriesList(items);
       setLoadError(null);
 
-      // Auto-seleccionar la primera si no hay ninguna seleccionada, o si la
-      // selección actual ya no existe (ej. fue eliminada en gestión).
-      const stillValid = selectedIdRef.current && items.some((c) => c.id === selectedIdRef.current);
-      if (!stillValid && items.length > 0) {
+      // Auto-seleccionar la primera solo si está habilitado o si la categoría
+      // previamente seleccionada ya no existe (ej. fue eliminada en gestión).
+      const currentSelected = selectedIdRef.current;
+      const stillValid = currentSelected && items.some((c) => c.id === currentSelected);
+      if (!stillValid && items.length > 0 && (autoSelectFirst || currentSelected !== null)) {
         onSelectRef.current(items[0]);
       }
     } catch (e) {
       console.error('Error al cargar categorías en selector:', e);
       setLoadError('No se pudieron cargar las categorías.');
     }
-  }, [userId, type]);
+  }, [userId, type, autoSelectFirst]);
 
   // Se recarga cada vez que la pantalla recupera el foco, para reflejar
   // categorías creadas, editadas o eliminadas en la gestión (RF-005).

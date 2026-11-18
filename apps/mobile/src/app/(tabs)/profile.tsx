@@ -29,6 +29,14 @@ export default function ProfileTab() {
       <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
         {/* Header */}
         <View style={styles.header}>
+          <Pressable
+            onPress={() => router.replace('/')}
+            style={({ pressed }) => [styles.backButton, pressed && styles.cardPressed]}
+            accessibilityRole="button"
+            accessibilityLabel="Volver a Inicio"
+          >
+            <Icon name="ArrowLeft" size={20} color={colors.ink} />
+          </Pressable>
           <Text style={styles.headerTitle}>Perfil y Ajustes</Text>
         </View>
 
@@ -172,9 +180,22 @@ const styles = StyleSheet.create({
     gap: spacing.base,
   },
   header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
     paddingVertical: spacing.sm,
     borderBottomWidth: 1,
     borderBottomColor: colors.line,
+  },
+  backButton: {
+    width: 38,
+    height: 38,
+    borderRadius: radius.full,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.line,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   headerTitle: {
     ...typography.titleLarge,
