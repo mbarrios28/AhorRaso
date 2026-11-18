@@ -253,11 +253,12 @@ export const NewIncomeScreen: React.FC = () => {
           <Text style={styles.headerTitle}>Nuevo ingreso</Text>
           <Pressable
             onPress={() => setIsVoiceModalOpen(true)}
-            style={styles.headerButton}
+            style={styles.micBtn}
             accessibilityRole="button"
             accessibilityLabel="Dictar ingreso por voz"
           >
-            <Icon name="Mic" size={20} color={colors.secondary} />
+            <Icon name="Mic" size={17} color={colors.secondary} />
+            <Text style={styles.micBtnText}>Dictar</Text>
           </Pressable>
         </View>
 
@@ -516,7 +517,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   header: {
-    height: 52,
+    height: 56,
     paddingHorizontal: spacing.gutter,
     flexDirection: 'row',
     alignItems: 'center',
@@ -534,6 +535,26 @@ const styles = StyleSheet.create({
   headerTitle: {
     ...typography.titleSmall,
     color: colors.ink,
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  micBtn: {
+    height: 36,
+    paddingHorizontal: 14,
+    borderRadius: radius.full,
+    backgroundColor: 'rgba(34, 197, 94, 0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(34, 197, 94, 0.3)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  micBtnText: {
+    fontFamily: fontFamilies.monoBold,
+    fontSize: 11,
+    color: colors.secondary,
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
   },
   scrollContent: {
     padding: spacing.gutter,

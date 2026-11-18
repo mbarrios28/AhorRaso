@@ -27,7 +27,7 @@ describe('initDatabase (DDL + semilla de categorías)', () => {
     jest.restoreAllMocks();
   });
 
-  it('crea el catálogo completo de categorías por defecto (10 gastos + 6 ingresos)', () => {
+  it('crea el catálogo completo de categorías por defecto (10 gastos + 3 ingresos)', () => {
     initDatabase();
 
     const seeded = allDevCategories();
@@ -41,8 +41,9 @@ describe('initDatabase (DDL + semilla de categorías)', () => {
     expect(names).toContain('Alimentación');
     expect(names).toContain('Diversión');
     expect(names).toContain('Sueldo');
+    expect(names).toContain('Propina');
+    expect(names).toContain('Otros ingresos');
     expect(names).toContain('Vivienda');
-    expect(names).toContain('Trabajo independiente');
   });
 
   it('es idempotente: re-ejecutarla 3 veces no duplica categorías', () => {
