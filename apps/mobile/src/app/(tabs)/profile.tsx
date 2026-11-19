@@ -7,6 +7,8 @@ import { Icon } from '@/core/ui';
 import { db, profile, Profile } from '@/core/db';
 import { DEV_USER_ID } from '@/core/dev/constants';
 import { eq } from 'drizzle-orm';
+import { PinSettings } from '@/features/security/ui/PinSettings';
+import { BiometricSettings } from '@/features/security/ui/BiometricSettings';
 
 export default function ProfileTab() {
   const [userProfile, setUserProfile] = useState<Profile | null>(null);
@@ -99,6 +101,10 @@ export default function ProfileTab() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>SEGURIDAD Y BASE LOCAL</Text>
           <View style={styles.card}>
+            <PinSettings />
+            <View style={styles.divider} />
+            <BiometricSettings />
+            <View style={styles.divider} />
             <View style={styles.row}>
               <View style={styles.rowLeft}>
                 <Icon name="Database" size={18} color={colors.primary} />
@@ -127,7 +133,9 @@ export default function ProfileTab() {
             <Text style={styles.infoBadgeText}>RF-018 · SEGURIDAD Y ACCESO</Text>
           </View>
           <Text style={styles.infoText}>
-            Módulo asignado a Dev C para autenticación por PIN, biometría y sesión Supabase Auth.
+            El PIN y la biometría son métodos de protección locales; no reemplazan el inicio de
+            sesión de una cuenta. La aplicación todavía no bloquea globalmente sus pantallas ni
+            aplica bloqueo por inactividad.
           </Text>
         </View>
       </ScrollView>
