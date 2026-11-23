@@ -246,6 +246,19 @@ export function DashboardScreen() {
           <Icon name="ChevronRight" size={18} color={colors.primary} />
         </Pressable>
 
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => router.push('/debts')}
+          style={({ pressed }) => [styles.insightsBannerCard, pressed && { opacity: 0.8 }]}
+        >
+          <Icon name="CreditCard" size={20} color={colors.primary} />
+          <View style={styles.insightsContent}>
+            <Text style={styles.insightsTitle}>Priorizar deudas</Text>
+            <Text style={styles.insightsSubtitle}>Ordena tus deudas por saldo o tasa.</Text>
+          </View>
+          <Icon name="ChevronRight" size={18} color={colors.primary} />
+        </Pressable>
+
         {/* 6. Gastos por Categoría (RF-008 / HU-04) */}
         <View style={styles.section}>
           <View style={styles.sectionHeaderRow}>

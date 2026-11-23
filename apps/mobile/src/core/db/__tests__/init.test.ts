@@ -185,3 +185,46 @@ describe('CategoryError en la inicialización', () => {
     expect(() => initDatabase()).not.toThrow(CategoryError);
   });
 });
+
+describe('inicialización de deudas', () => {
+  beforeEach(() => {
+    resetDatabase();
+  });
+
+  it('agrega la tabla a una base anterior en memoria y conserva sus registros', () => {
+    const profiles = sqliteDb.getAllSync('SELECT * FROM profile ORDER BY id');
+    const existingCategories = allDevCategories();
+    sqliteDb.execSync('DROP TABLE debts');
+
+    initDatabase();
+    sqliteDb.runSync(
+      'INSERT INTO debts VALUES (?, ?, ?, ?, ?, ?, ?)',
+      ['debt-1', DEV_USER_ID, 'Préstamo de prueba', 101, 0, 0, '2026-01-01T00:00:00.000Z'],
+    );
+    initDatabase();
+
+    expect(countRows('debts')).toBe(1);
+    expect(sqliteDb.getAllSync('SELECT * FROM profile ORDER BY id')).toEqual(profiles);
+    expect(allDevCategories()).toEqual(existingCategories);
+    expect(sqliteDb.getFirstSync(
+      "SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'idx_debts_user'",
+    )).toEqual({ name: 'idx_debts_user' });
+  });
+
+  it.each([
+    [' ', 100, 0, 0],
+    ['Prueba', 0, 0, 0],
+    ['Prueba', 100.5, 0, 0],
+    ['Prueba', 9007199254740992, 0, 0],
+    ['Prueba', 100, -1, 0],
+    ['Prueba', 100, 0.5, 0],
+    ['Prueba', 100, 0, -1],
+    ['Prueba', 100, 0, 101],
+  ])('rechaza valores inválidos a nivel SQL (%s, %s, %s, %s)', (name, balance, rate, minimum) => {
+    expect(() => sqliteDb.runSync(
+      'INSERT INTO debts VALUES (?, ?, ?, ?, ?, ?, ?)',
+      ['invalid-debt', DEV_USER_ID, name, balance, rate, minimum, '2026-01-01T00:00:00.000Z'],
+    )).toThrow(/CHECK constraint failed/);
+    expect(countRows('debts')).toBe(0);
+  });
+});
