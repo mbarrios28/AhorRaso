@@ -2,12 +2,13 @@
  * Pruebas de integración de la inicialización y la semilla de categorías
  * (RF-005): idempotencia, ausencia de duplicados y respeto de datos del usuario.
  */
-import { sqliteDb, db, categories, Category } from '@/core/db';
+import { sqliteDb, db, categories, Category, profile } from '@/core/db';
 import { initDatabase, DEFAULT_CATEGORIES } from '@/core/db/init';
 import { DEV_USER_ID } from '@/core/dev/constants';
 import { resetDatabase, countRows } from '../../../../test/helpers/test-db';
 import { categoriesRepository } from '../../../features/categories/data/categories.repository';
 import { CategoryError } from '../../../features/categories/domain/errors';
+import { dashboardRepository } from '../../../features/dashboard/data/dashboard.repository';
 
 const expenseDefaults = DEFAULT_CATEGORIES.filter((c) => c.type === 'expense');
 const incomeDefaults = DEFAULT_CATEGORIES.filter((c) => c.type === 'income');
@@ -55,6 +56,21 @@ describe('initDatabase (DDL + semilla de categorías)', () => {
     expect(countRows('categories')).toBe(DEFAULT_CATEGORIES.length);
     const names = allDevCategories().map((c) => `${c.type}::${c.name}`);
     expect(new Set(names).size).toBe(names.length);
+  });
+
+  it('migrates a legacy profile for full-row reads without changing financial data', () => {
+    initDatabase();
+    sqliteDb.execSync('ALTER TABLE profile DROP COLUMN password_hash; ALTER TABLE profile DROP COLUMN pin_hash;');
+    sqliteDb.runSync('UPDATE profile SET initial_balance_cents = ? WHERE id = ?', [4300, DEV_USER_ID]);
+    initDatabase();
+    initDatabase();
+    expect(db.select().from(profile).get()).toMatchObject({
+      id: DEV_USER_ID,
+      initialBalanceCents: 4300,
+      passwordHash: null,
+      pinHash: null,
+    });
+    expect(dashboardRepository.getDashboardSummary(DEV_USER_ID).balanceCents).toBe(4300);
   });
 
   it('crea el perfil DEV una sola vez (re-ejecutable)', () => {

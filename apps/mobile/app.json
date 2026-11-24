@@ -25,7 +25,8 @@
       "permissions": [
         "android.permission.RECORD_AUDIO"
       ],
-      "package": "com.jcode123.mobile"
+      "package": "com.jcode123.mobile",
+      "allowBackup": false
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -45,7 +46,16 @@
             "com.google.android.tts"
           ]
         }
-      ]
+      ],
+      "expo-local-authentication",
+      [
+        "expo-secure-store",
+        {
+          "configureAndroidBackup": false
+        }
+      ],
+      "./plugins/withAndroidPrivacy",
+      "./plugins/withShortNativeCmakePaths"
     ],
     "extra": {
       "router": {},

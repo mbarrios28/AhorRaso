@@ -257,6 +257,16 @@ export function initDatabase(): void {
     CREATE INDEX IF NOT EXISTS idx_ai_cache_user ON ai_cache (user_id);
   `);
 
+  // Existing installations may predate the nullable columns in the Drizzle schema.
+  // Access credentials are provisioned separately in SecureStore.
+  const profileColumns = sqliteDb.getAllSync<{ name: string }>('PRAGMA table_info(profile)');
+  if (!profileColumns.some(({ name }) => name === 'password_hash')) {
+    sqliteDb.execSync('ALTER TABLE profile ADD COLUMN password_hash TEXT');
+  }
+  if (!profileColumns.some(({ name }) => name === 'pin_hash')) {
+    sqliteDb.execSync('ALTER TABLE profile ADD COLUMN pin_hash TEXT');
+  }
+
   // 2. Sembrado de Profile inicial (DEV_USER_ID)
   const now = new Date().toISOString();
   const existingProfile = sqliteDb.getFirstSync<any>(
