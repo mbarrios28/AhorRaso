@@ -229,6 +229,21 @@ export function initDatabase(): void {
     CREATE INDEX IF NOT EXISTS idx_savings_goals_user_status ON savings_goals (user_id, status);
     CREATE INDEX IF NOT EXISTS idx_savings_goals_user_date ON savings_goals (user_id, created_at DESC);
 
+    CREATE TABLE IF NOT EXISTS debts (
+      id TEXT PRIMARY KEY NOT NULL,
+      user_id TEXT NOT NULL,
+      name TEXT NOT NULL CHECK (length(trim(name)) BETWEEN 1 AND 80),
+      outstanding_balance_cents INTEGER NOT NULL
+        CHECK (typeof(outstanding_balance_cents) = 'integer' AND outstanding_balance_cents BETWEEN 1 AND 9007199254740991),
+      annual_interest_rate_bps INTEGER NOT NULL
+        CHECK (typeof(annual_interest_rate_bps) = 'integer' AND annual_interest_rate_bps BETWEEN 0 AND 9007199254740991),
+      minimum_payment_cents INTEGER NOT NULL
+        CHECK (typeof(minimum_payment_cents) = 'integer' AND minimum_payment_cents BETWEEN 0 AND outstanding_balance_cents),
+      created_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_debts_user ON debts (user_id);
+
     -- Tabla: ai_cache (RF-012 / RF-013: Caché Local de Analítica de Consumo y Recomendaciones)
     CREATE TABLE IF NOT EXISTS ai_cache (
       cache_key TEXT PRIMARY KEY,

@@ -16,7 +16,8 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-import { sqliteTable, text, integer, index, uniqueIndex } from 'drizzle-orm/sqlite-core';
+import { sql } from 'drizzle-orm';
+import { sqliteTable, text, integer, index, uniqueIndex, check } from 'drizzle-orm/sqlite-core';
 
 // ==========================================
 // 1. TABLA: profile (Usuario local logueado)
@@ -309,4 +310,26 @@ export const aiCache = sqliteTable(
 
 export type AiCacheEntry = typeof aiCache.$inferSelect;
 export type InsertAiCacheEntry = typeof aiCache.$inferInsert;
+
+export const debts = sqliteTable(
+  'debts',
+  {
+    id: text('id').primaryKey().notNull(),
+    userId: text('user_id').notNull(),
+    name: text('name').notNull(),
+    outstandingBalanceCents: integer('outstanding_balance_cents').notNull(),
+    annualInterestRateBps: integer('annual_interest_rate_bps').notNull(),
+    minimumPaymentCents: integer('minimum_payment_cents').notNull(),
+    createdAt: text('created_at').notNull(),
+  },
+  (t) => [
+    index('idx_debts_user').on(t.userId),
+    check('debts_name', sql`length(trim(${t.name})) BETWEEN 1 AND 80`),
+    check('debts_balance', sql`typeof(${t.outstandingBalanceCents}) = 'integer' AND ${t.outstandingBalanceCents} BETWEEN 1 AND 9007199254740991`),
+    check('debts_rate', sql`typeof(${t.annualInterestRateBps}) = 'integer' AND ${t.annualInterestRateBps} BETWEEN 0 AND 9007199254740991`),
+    check('debts_minimum', sql`typeof(${t.minimumPaymentCents}) = 'integer' AND ${t.minimumPaymentCents} BETWEEN 0 AND ${t.outstandingBalanceCents}`),
+  ],
+);
+
+export type Debt = typeof debts.$inferSelect;
 

@@ -91,17 +91,15 @@ export default function RootLayout() {
           />
           <Stack.Screen
             name="categories"
-            options={{
-              headerShown: false,
-              animation: 'slide_from_right',
-            }}
+            options={{ animation: 'slide_from_right' }}
           />
           <Stack.Screen
             name="analytics"
-            options={{
-              headerShown: false,
-              animation: 'slide_from_right',
-            }}
+            options={{ animation: 'slide_from_right' }}
+          />
+          <Stack.Screen
+            name="debts"
+            options={{ animation: 'slide_from_right' }}
           />
         </Stack>
       </View>
