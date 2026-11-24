@@ -40,6 +40,12 @@ yarn-error.*
 /ios
 /android
 
+# Gradle build cache & artifacts in modules
+.gradle/
+build/
+**/android/.gradle/
+**/android/build/
+
 # Configuraciones de editor personales
 .claude/
 .vscode/

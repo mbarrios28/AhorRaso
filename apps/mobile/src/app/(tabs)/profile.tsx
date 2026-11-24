@@ -5,24 +5,37 @@ import { router, useFocusEffect } from 'expo-router';
 import { colors, spacing, radius, typography } from '@/core/theme';
 import { Icon } from '@/core/ui';
 import { NotificationSettingsModal } from '@/features/alerts';
-import { db, profile, Profile } from '@/core/db';
-import { DEV_USER_ID } from '@/core/dev/constants';
+import { db, profile } from '@/core/db';
+import { DEV_USER_ID, LEGACY_DEMO_PROFILE_NAME } from '@/core/dev/constants';
 import { eq } from 'drizzle-orm';
+import { BiometricSettings } from '@/features/security/ui/BiometricSettings';
+import { PinSettings } from '@/features/security/ui/PinSettings';
+import { useSecurity } from '@/features/security/ui/AuthSession';
+
+const profileFields = {
+  displayName: profile.displayName,
+  currency: profile.currency,
+  locale: profile.locale,
+  timezone: profile.timezone,
+};
 
 export default function ProfileTab() {
-  const [userProfile, setUserProfile] = useState<Profile | null>(null);
+  const { lock } = useSecurity();
+  const [userProfile, setUserProfile] = useState<Pick<typeof profile.$inferSelect, keyof typeof profileFields> | null>(null);
   const [alertsModalVisible, setAlertsModalVisible] = useState(false);
 
   useFocusEffect(
     useCallback(() => {
       try {
-        const p = db.select().from(profile).where(eq(profile.id, DEV_USER_ID)).get();
+        const p = db.select(profileFields).from(profile).where(eq(profile.id, DEV_USER_ID)).get();
         if (p) setUserProfile(p);
       } catch (e) {
         console.error('Error al cargar perfil:', e);
       }
     }, [])
   );
+
+  const displayName = userProfile?.displayName === LEGACY_DEMO_PROFILE_NAME ? null : userProfile?.displayName;
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -44,15 +57,11 @@ export default function ProfileTab() {
         <View style={styles.userCard}>
           <View style={styles.avatar}>
             <Text style={styles.avatarText}>
-              {userProfile?.displayName?.charAt(0) || 'U'}
+              {displayName?.charAt(0) || 'U'}
             </Text>
           </View>
           <View style={styles.userInfo}>
-            <Text style={styles.userName}>{userProfile?.displayName || 'Usuario'}</Text>
-            <Text style={styles.userSub}>Estudiante · UNSA Arequipa</Text>
-            <Text style={styles.userUuid} numberOfLines={1}>
-              ID: {userProfile?.id || DEV_USER_ID}
-            </Text>
+            <Text style={styles.userName}>{displayName || 'Usuario'}</Text>
           </View>
         </View>
 
@@ -126,39 +135,19 @@ export default function ProfileTab() {
 
         {/* Seguridad y Datos */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>SEGURIDAD Y BASE LOCAL</Text>
+          <Text style={styles.sectionTitle}>SEGURIDAD Y ACCESO</Text>
           <View style={styles.card}>
-            <View style={styles.row}>
-              <View style={styles.rowLeft}>
-                <Icon name="Database" size={18} color={colors.primary} />
-                <Text style={styles.rowLabel}>Motor SQLite</Text>
-              </View>
-              <View style={styles.badge}>
-                <Text style={styles.badgeText}>Drizzle ORM</Text>
-              </View>
-            </View>
+            <PinSettings />
             <View style={styles.divider} />
-            <View style={styles.row}>
-              <View style={styles.rowLeft}>
-                <Icon name="CloudOff" size={18} color={colors.secondary} />
-                <Text style={styles.rowLabel}>Modo de Operación</Text>
-              </View>
-              <View style={[styles.badge, { backgroundColor: colors.surface3 }]}>
-                <Text style={[styles.badgeText, { color: colors.secondary }]}>100% Offline</Text>
-              </View>
-            </View>
+            <BiometricSettings />
+            <View style={styles.divider} />
+            <Text style={styles.securityHint}>AhorRaso se bloquea tras un minuto de inactividad.</Text>
+            <Pressable accessibilityRole="button" onPress={lock} style={styles.row}>
+              <Text style={styles.rowLabel}>Bloquear sesión</Text>
+            </Pressable>
           </View>
         </View>
 
-        {/* Módulo asignado a Dev C */}
-        <View style={styles.infoBox}>
-          <View style={styles.infoBadge}>
-            <Text style={styles.infoBadgeText}>RF-018 · SEGURIDAD Y ACCESO</Text>
-          </View>
-          <Text style={styles.infoText}>
-            Módulo asignado a Dev C para autenticación por PIN, biometría y sesión Supabase Auth.
-          </Text>
-        </View>
       </ScrollView>
       {/* Modal de Configuración de Alertas y Umbrales (RF-010) */}
       <NotificationSettingsModal
@@ -232,17 +221,6 @@ const styles = StyleSheet.create({
     ...typography.titleSmall,
     color: colors.ink,
   },
-  userSub: {
-    ...typography.bodySmall,
-    color: colors.ink2,
-    marginTop: 2,
-  },
-  userUuid: {
-    ...typography.monoSmall,
-    fontSize: 10,
-    color: colors.ink3,
-    marginTop: 4,
-  },
   section: {
     gap: spacing.xs,
   },
@@ -286,41 +264,8 @@ const styles = StyleSheet.create({
     backgroundColor: colors.line,
     marginVertical: spacing.xs,
   },
-  badge: {
-    backgroundColor: colors.surface2,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 2,
-    borderRadius: radius.xs,
-  },
-  badgeText: {
-    ...typography.monoSmall,
-    color: colors.primary,
-    fontSize: 11,
-  },
-  infoBox: {
-    backgroundColor: colors.surface,
-    borderColor: colors.line,
-    borderWidth: 1,
-    borderRadius: radius.md,
-    padding: spacing.base,
-    gap: spacing.xs,
-    marginTop: spacing.xs,
-  },
-  infoBadge: {
-    alignSelf: 'flex-start',
-    backgroundColor: colors.surface2,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 2,
-    borderRadius: radius.xs,
-  },
-  infoBadgeText: {
-    ...typography.monoSmall,
-    fontSize: 10,
-    color: colors.primary,
-  },
-  infoText: {
+  securityHint: {
     ...typography.bodySmall,
     color: colors.ink2,
-    lineHeight: 18,
   },
 });
