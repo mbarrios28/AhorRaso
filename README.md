@@ -90,8 +90,11 @@ La plataforma resuelve los problemas más comunes de la gestión financiera manu
 - Detección de patrones de consumo y generación de recomendaciones contextuales de ahorro.
 
 ### 🔒 Seguridad Local y Privacidad
-- Aislamiento estricto de datos con *Row Level Security* (RLS) en base de datos.
-- Bloqueo y autenticación local mediante PIN numérico y biometría (Face ID / Huella digital).
+- **HU-06 / RF-018.** Las instalaciones nuevas requieren un PIN local de seis dígitos. La biometría es opcional y se ofrece primero cuando está habilitada y disponible. Cancelarla mantiene el bloqueo y deja disponible el PIN.
+- Las contraseñas de instalaciones anteriores se conservan para configurar su primer PIN o recuperar un PIN olvidado. El acceso cotidiano usa el PIN de AhorRaso o la biometría del dispositivo.
+- El navegador financiero se monta después de autenticar. Se bloquea al arrancar, tras 60 segundos de inactividad o al regresar después de permanecer al menos 60 segundos en segundo plano.
+- Los verificadores se guardan en SecureStore y Android deriva el PIN con PBKDF2-HMAC-SHA-256 nativo. La base SQLite financiera usa el almacenamiento privado de la app y carece de cifrado propio.
+- **Validación en Android.** Tres desbloqueos en la compilación de desarrollo dieron una mediana de **3,26 s** y un máximo de **3,28 s** desde Confirmar hasta el layout financiero. Sigue pendiente la meta de 2 s. El rechazo del PIN incorrecto y el alta sin biometría utilizable están cubiertos por pruebas automatizadas. Su verificación física y la medición con un APK de distribución quedan pendientes.
 
 ---
 

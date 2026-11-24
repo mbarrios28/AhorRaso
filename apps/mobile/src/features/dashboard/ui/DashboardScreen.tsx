@@ -5,7 +5,7 @@ import { router, useFocusEffect } from 'expo-router';
 import { colors, spacing, radius, typography } from '@/core/theme';
 import { Icon } from '@/core/ui';
 import { db, profile, Profile } from '@/core/db';
-import { DEV_USER_ID } from '@/core/dev/constants';
+import { DEV_USER_ID, LEGACY_DEMO_PROFILE_NAME } from '@/core/dev/constants';
 import { eq } from 'drizzle-orm';
 import { DashboardSummary } from '../domain/types';
 import { dashboardRepository } from '../data/dashboard.repository';
@@ -66,7 +66,8 @@ export function DashboardScreen() {
         <View style={styles.header}>
           <View style={styles.headerTextGroup}>
             <Text style={styles.greeting} numberOfLines={1}>
-              Hola, {userProfile?.displayName || 'Estudiante UNSA'}
+              {userProfile?.displayName && userProfile.displayName !== LEGACY_DEMO_PROFILE_NAME
+                ? `Hola, ${userProfile.displayName}` : 'Hola'}
             </Text>
             <Text style={styles.campus}>UNSA · Arequipa</Text>
           </View>
